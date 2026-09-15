@@ -1,6 +1,8 @@
 # The Fixed Seed Company Audio Suite
 
-**FS_Audio Suite** — modular YuE2 audio generation for ComfyUI, by Make the Robot Do It.
+**FS_Audio Suite** — modular YuE2 audio generation for ComfyUI, by Fixed Seed LLC and Make the Robot Do It
+**Special thanks to @machinedelusions for the support in making this possible**
+Check him out at www.fixedseed.com
 
 ![FS_Audio Suite in ComfyUI](docs/fs_audio_suite.png)
  Six nodes, no stock nodes needed. Hum-to-song is the first feature; the suite is built to grow.
