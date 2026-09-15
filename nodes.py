@@ -101,7 +101,7 @@ class FSAudioModelLoader:
             enc_sd = comfy.utils.load_torch_file(folder_paths.get_full_path_or_raise("audio_encoders", melody_transcriber), safe_load=True)
             encoder = comfy.audio_encoders.audio_encoders.load_audio_encoder_from_sd(enc_sd)
             if encoder is None: raise RuntimeError("melody_transcriber is not a valid audio encoder (expected sheetsage2_bf16.safetensors)")
-        return ({"model": model, "clip": clip, "vae": vae, "encoder": encoder, "adapters": ads, "applied": applied},)
+        return ({"model": model, "clip": clip, "vae": vae, "encoder": encoder, "adapters": ads, "applied": applied, "ckpt_path": folder_paths.get_full_path_or_raise("checkpoints", yue2_checkpoint)},)
 
 class HumInput:
     """Your hum. Pick a file, upload, or press Record in the node."""

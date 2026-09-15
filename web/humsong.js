@@ -83,9 +83,10 @@ app.registerExtension({
   name: "FS_Audio Suite",
   async setup() {
     api.addEventListener("humsong.stage", ({ detail }) => { const node = app.graph.getNodeById(Number(detail.node)); node?.hsStage?.(detail.stage, detail.pct, detail.detail); });
+    api.addEventListener("fsaudio.train", ({ detail }) => { const node = app.graph.getNodeById(Number(detail.node)); node?.fsTrain?.(detail); });
   },
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    const FS = new Set(["FSAudioModelLoader", "FSAudioLoraLoader", "FSAudioAdapterLoader", "HumInput", "FSAudioSampler", "FSAudioOutput", "FSAudioAdapterDownloader"]); if (!FS.has(nodeData.name)) return;
+    const FS = new Set(["FSAudioModelLoader", "FSAudioLoraLoader", "FSAudioAdapterLoader", "HumInput", "FSAudioSampler", "FSAudioOutput", "FSAudioAdapterDownloader", "FSAudioTrainAssets", "FSAudioDatasetBuilder", "FSAudioRegularizer", "FSAudioLoraTrainer"]); if (!FS.has(nodeData.name)) return;
     const onCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () { onCreated?.apply(this, arguments); paint(this); try { this.hsSetup?.(); } catch (e) { console.error("[HumSong] UI setup failed for", nodeData.name, e); } };
 
@@ -153,6 +154,48 @@ app.registerExtension({
       };
       const onExecuted = nodeType.prototype.onExecuted;
       nodeType.prototype.onExecuted = function (msg) { onExecuted?.apply(this, arguments); if (this.hsOut && msg?.fs_download?.[0]) { this.hsOut.innerHTML = msg.fs_download[0].split("\n").map(l => `<b>✓</b> ${esc(l)}`).join("<br>"); this.hsOut.style.whiteSpace = "normal"; } };
+    }
+
+    if (nodeData.name === "FSAudioTrainAssets") {
+      nodeType.prototype.hsSetup = function () {
+        const wrap = document.createElement("div"); wrap.className = "hs-wrap"; wrap.appendChild(brand());
+        const row = document.createElement("div"); const label = document.createElement("span"); label.className = "hs-label"; label.textContent = "Queue to download"; const det = document.createElement("span"); det.className = "hs-detail"; row.append(label, det);
+        const out = document.createElement("div"); out.className = "hs-meta"; out.textContent = "Fetches the audio → token head into models/fs_audio. Needed once before building datasets."; wrap.append(row, out); addPanel(this, "fs_assets_panel", wrap, 140, 440); this.hsOut = out;
+        this.hsStage = (stage, pct, detail) => { label.textContent = stage; det.textContent = detail || ""; };
+      };
+      const onExecuted = nodeType.prototype.onExecuted;
+      nodeType.prototype.onExecuted = function (msg) { onExecuted?.apply(this, arguments); if (this.hsOut && msg?.fs_download?.[0]) this.hsOut.innerHTML = `<b>✓</b> ${esc(msg.fs_download[0])}`; };
+    }
+    if (nodeData.name === "FSAudioDatasetBuilder") {
+      nodeType.prototype.hsSetup = function () {
+        const wrap = document.createElement("div"); wrap.className = "hs-wrap"; wrap.appendChild(brand());
+        const row = document.createElement("div"); const label = document.createElement("span"); label.className = "hs-label"; label.textContent = "Ready"; const det = document.createElement("span"); det.className = "hs-detail"; row.append(label, det);
+        const bar = document.createElement("div"); bar.className = "hs-stages"; const seg = document.createElement("div"); seg.className = "hs-stage"; bar.appendChild(seg);
+        const out = document.createElement("div"); out.className = "hs-meta"; out.textContent = "Drop songs in a folder with <song>.txt (style) and <song>.lyrics.txt sidecars, then queue.";
+        wrap.append(row, bar, out); addPanel(this, "fs_dataset_panel", wrap, 150, 460);
+        this.fsTrain = (d) => { if (d.stage) label.textContent = d.stage; det.textContent = d.detail || ""; if (d.pct != null) { seg.className = "hs-stage on"; seg.style.background = `linear-gradient(90deg, ${MINT} ${d.pct}%, ${LINE} ${d.pct}%)`; seg.style.animation = "none"; } if (d.stage === "Done") { seg.className = "hs-stage done"; seg.style.background = ""; out.textContent = d.detail || ""; } };
+      };
+    }
+    if (nodeData.name === "FSAudioLoraTrainer") {
+      nodeType.prototype.hsSetup = function () {
+        const wrap = document.createElement("div"); wrap.className = "hs-wrap"; wrap.appendChild(brand());
+        const row = document.createElement("div"); const label = document.createElement("span"); label.className = "hs-label"; label.textContent = "Ready"; const det = document.createElement("span"); det.className = "hs-detail"; row.append(label, det);
+        const chart = document.createElement("canvas"); chart.className = "hs-wave"; chart.style.height = "110px"; chart.style.cursor = "default";
+        const out = document.createElement("div"); out.className = "hs-meta"; out.innerHTML = "Loss curve appears here. <b>mint</b> = training loss, <b>white</b> = held-out artist, <b>grey</b> = regularizer.";
+        wrap.append(row, chart, out); addPanel(this, "fs_train_panel", wrap, 250, 500);
+        const losses = [], evals = []; let total = 1;
+        const draw = () => { const ctx = chart.getContext("2d"), W = chart.width = Math.max(200, chart.clientWidth) * 2, H = chart.height = 220; ctx.fillStyle = INK; ctx.fillRect(0, 0, W, H);
+          ctx.fillStyle = "rgba(98,240,218,.12)"; for (let x = 8; x < W; x += 28) for (let y = 8; y < H; y += 28) ctx.fillRect(x, y, 2, 2);
+          const all = losses.map(p => p[1]).concat(evals.flatMap(e => [e.artist, e.regularizer].filter(v => v != null))); if (!all.length) return;
+          const lo = Math.min(...all) * 0.97, hi = Math.max(...all) * 1.03; const X = s => 12 + (W - 24) * s / total, Y = v => H - 10 - (H - 20) * (v - lo) / (hi - lo);
+          ctx.strokeStyle = MINT; ctx.lineWidth = 2; ctx.beginPath(); losses.forEach(([s, v], i) => i ? ctx.lineTo(X(s), Y(v)) : ctx.moveTo(X(s), Y(v))); ctx.stroke();
+          const line = (key, color) => { const pts = evals.filter(e => e[key] != null); if (pts.length < 1) return; ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); pts.forEach((e, i) => i ? ctx.lineTo(X(e.step), Y(e[key])) : ctx.moveTo(X(e.step), Y(e[key]))); ctx.stroke(); pts.forEach(e => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(e.step), Y(e[key]), 4, 0, 7); ctx.fill(); }); };
+          line("artist", "#ffffff"); line("regularizer", "#7b8a96");
+          ctx.fillStyle = "#9fb3ae"; ctx.font = "18px ui-monospace, Menlo, monospace"; ctx.fillText(hi.toFixed(2), 14, 26); ctx.fillText(lo.toFixed(2), 14, H - 14); };
+        this.fsTrain = (d) => { if (d.total) total = d.total; if (d.stage) label.textContent = d.stage; if (d.loss != null) { losses.push([d.step, d.loss]); if (losses.length > 2000) losses.shift(); label.textContent = `Step ${d.step} / ${total}`; det.textContent = `loss ${d.loss.toFixed(3)} · seq ${d.seq} · ETA ${Math.round((d.eta || 0) / 60)} min`; }
+          if (d.evals) { evals.push({ step: d.step, ...d.evals }); const e = d.evals; out.innerHTML = `step <b>${d.step}</b>: held-out artist <b>${e.artist?.toFixed(3) ?? "–"}</b>` + (e.regularizer != null ? ` · regularizer <b>${e.regularizer.toFixed(3)}</b>` : ""); }
+          if (d.detail && !d.loss) det.textContent = d.detail; draw(); };
+      };
     }
     if (nodeData.name === "FSAudioOutput") {
       const isCompare = false;
