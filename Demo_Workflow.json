@@ -1,0 +1,331 @@
+{
+  "id": "f6db8e61-ca4a-4784-a1e4-299617ae51db",
+  "revision": 0,
+  "last_node_id": 12,
+  "last_link_id": 16,
+  "nodes": [
+    {
+      "id": 9,
+      "type": "FSAudioOutput",
+      "pos": [
+        -605.8575900606098,
+        4746.036307235098
+      ],
+      "size": [
+        460,
+        342
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "song",
+          "type": "AUDIO",
+          "link": 13
+        },
+        {
+          "name": "score",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "info",
+          "shape": 7,
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "FSAudioOutput"
+      },
+      "widgets_values": [
+        "FS_Audio/song",
+        ""
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "FS_Audio/song",
+        "humsong_player": ""
+      },
+      "color": "#131b24",
+      "bgcolor": "#0e141b"
+    },
+    {
+      "id": 4,
+      "type": "HumInput",
+      "pos": [
+        -1457.0227529936128,
+        4761.74955604173
+      ],
+      "size": [
+        360,
+        346
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "audio_conditioning",
+          "type": "AUDIO",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "HumInput"
+      },
+      "widgets_values": [
+        "hum_2026-09-15T18-22-19-868Z-clip.mp3",
+        0,
+        30,
+        ""
+      ],
+      "widgets_values_named": {
+        "audio": "hum_2026-09-15T18-22-19-868Z-clip.mp3",
+        "start_seconds": 0,
+        "max_seconds": 30,
+        "humsong_rec": ""
+      },
+      "color": "#2a1f3d",
+      "bgcolor": "#171226"
+    },
+    {
+      "id": 8,
+      "type": "FSAudioSampler",
+      "pos": [
+        -1076.160305791314,
+        4743.991087195998
+      ],
+      "size": [
+        454.78672887228663,
+        679.9225184276511
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "pipe",
+          "type": "FS_AUDIO_PIPE",
+          "link": 11
+        },
+        {
+          "name": "audio_conditioning",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 16
+        },
+        {
+          "name": "hum",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "song",
+          "type": "AUDIO",
+          "links": [
+            13
+          ]
+        },
+        {
+          "name": "score",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FSAudioSampler"
+      },
+      "widgets_values": [
+        "indie, folk, experimental, classic rock, synth rock, alternative rock",
+        "[Verse 1]\n  Your coat is drying by the door\n  The storm has followed you upstairs\n  You say you don’t live there anymore\n  Then talk as though you’re halfway there\n\n  I put the kettle on again\n  You turn your phone against the light\n  We used to know how this would end\n  Now neither one of us is right\n\n  [Chorus]\n  Leave the kitchen light on\n  Let the morning take its time\n  We don’t have to call this healing\n  We don’t have to say we’re fine\n  I can sit beside the silence\n  I can give you somewhere warm\n  But I can’t keep being shelter\n  If you only come in storms\n\n  [Verse 2]\n  You found a place above a bar\n  You say the windows face the sea\n  You’ve packed the plates but not the car\n  There’s always something else you need\n\n  I almost ask if I should come\n  You almost reach across the sink\n  The kettle clicks; we both go numb\n  With longer than we need to think\n\n  [Chorus]\n  Leave the kitchen light on\n  Let the morning take its time\n  We don’t have to call this healing\n  We don’t have to say we’re fine\n  I can sit beside the silence\n  I can give you somewhere warm\n  But I can’t keep being shelter\n  If you only come in storms",
+        541226271659887,
+        "randomize",
+        240,
+        "full",
+        32,
+        "dpm_2",
+        "sgm_uniform",
+        0.7,
+        1,
+        ""
+      ],
+      "widgets_values_named": {
+        "style": "indie, folk, experimental, classic rock, synth rock, alternative rock",
+        "lyrics": "[Verse 1]\n  Your coat is drying by the door\n  The storm has followed you upstairs\n  You say you don’t live there anymore\n  Then talk as though you’re halfway there\n\n  I put the kettle on again\n  You turn your phone against the light\n  We used to know how this would end\n  Now neither one of us is right\n\n  [Chorus]\n  Leave the kitchen light on\n  Let the morning take its time\n  We don’t have to call this healing\n  We don’t have to say we’re fine\n  I can sit beside the silence\n  I can give you somewhere warm\n  But I can’t keep being shelter\n  If you only come in storms\n\n  [Verse 2]\n  You found a place above a bar\n  You say the windows face the sea\n  You’ve packed the plates but not the car\n  There’s always something else you need\n\n  I almost ask if I should come\n  You almost reach across the sink\n  The kettle clicks; we both go numb\n  With longer than we need to think\n\n  [Chorus]\n  Leave the kitchen light on\n  Let the morning take its time\n  We don’t have to call this healing\n  We don’t have to say we’re fine\n  I can sit beside the silence\n  I can give you somewhere warm\n  But I can’t keep being shelter\n  If you only come in storms",
+        "seed": 541226271659887,
+        "control_after_generate": "randomize",
+        "song_length_cap": 240,
+        "score_mode": "full",
+        "steps": 32,
+        "sampler": "dpm_2",
+        "scheduler": "sgm_uniform",
+        "score_temperature": 0.7,
+        "music_temperature": 1,
+        "humsong_progress": ""
+      },
+      "color": "#131b24",
+      "bgcolor": "#0e141b"
+    },
+    {
+      "id": 7,
+      "type": "FSAudioModelLoader",
+      "pos": [
+        -1222.7172190024974,
+        4556.014384714263
+      ],
+      "size": [
+        292.8805194709066,
+        102
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "loras",
+          "shape": 7,
+          "type": "FS_AUDIO_LORAS",
+          "link": null
+        },
+        {
+          "name": "adapters",
+          "shape": 7,
+          "type": "FS_AUDIO_ADAPTERS",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "pipe",
+          "type": "FS_AUDIO_PIPE",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FSAudioModelLoader"
+      },
+      "widgets_values": [
+        "yue2_3b_bf16.safetensors",
+        "sheetsage2_bf16.safetensors"
+      ],
+      "widgets_values_named": {
+        "yue2_checkpoint": "yue2_3b_bf16.safetensors",
+        "melody_transcriber": "sheetsage2_bf16.safetensors"
+      },
+      "color": "#131b24",
+      "bgcolor": "#0e141b"
+    },
+    {
+      "id": 10,
+      "type": "FSAudioAdapterLoader",
+      "pos": [
+        -1551.5797473026907,
+        4575.685741560581
+      ],
+      "size": [
+        297.1372023122408,
+        130
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "adapters",
+          "shape": 7,
+          "type": "FS_AUDIO_ADAPTERS",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "adapters",
+          "type": "FS_AUDIO_ADAPTERS",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FSAudioAdapterLoader"
+      },
+      "widgets_values": [
+        "hum_adapter_v1_comfyui.safetensors",
+        1,
+        "continue from hum",
+        0
+      ],
+      "widgets_values_named": {
+        "adapter_name": "hum_adapter_v1_comfyui.safetensors",
+        "hum_influence": 1,
+        "melody": "continue from hum",
+        "hum_offset_seconds": 0
+      },
+      "color": "#131b24",
+      "bgcolor": "#0e141b"
+    }
+  ],
+  "links": [
+    [
+      11,
+      7,
+      0,
+      8,
+      0,
+      "FS_AUDIO_PIPE"
+    ],
+    [
+      12,
+      10,
+      0,
+      7,
+      1,
+      "FS_AUDIO_ADAPTERS"
+    ],
+    [
+      13,
+      8,
+      0,
+      9,
+      0,
+      "AUDIO"
+    ],
+    [
+      16,
+      4,
+      0,
+      8,
+      1,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.8390545288824167,
+      "offset": [
+        1917.177032127959,
+        -4399.885590049023
+      ]
+    },
+    "frontendVersion": "1.52.7"
+  },
+  "version": 0.4
+}
