@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-fs_audio_suite"
+description = "FS_Audio Suite: modular YuE2 audio generation for ComfyUI (hum-to-song, LoRA and adapter loaders, sampler, output). By Make the Robot Do It."
+version = "0.1.0"
+license = { text = "CC-BY-NC-4.0" }
+dependencies = ["librosa>=0.10", "scipy", "soundfile"]
+
+[project.urls]
+Repository = "https://huggingface.co/Mothersuperior/YuE2-hum-to-song"
+
+[tool.comfy]
+PublisherId = "maketherobotdoit"
+DisplayName = "FS_Audio Suite"
+Icon = "web/nora.png"
