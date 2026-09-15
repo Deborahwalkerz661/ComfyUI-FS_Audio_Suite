@@ -16,7 +16,8 @@ def _fs_files(ext): return sorted(f for f in os.listdir(assets_dir()) if f.endsw
 
 class FSAudioTrainAssets:
     """Standalone: downloads the audio->token head (and other training assets) into models/fs_audio."""
-    ASSETS = {"tokenizer_head_joint_v4 (audio -> YuE2 tokens)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v4.safetensors", "fs_audio")}
+    ASSETS = {"tokenizer_head_joint_v4 (audio -> YuE2 tokens)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v4.safetensors", "fs_audio"),
+              "minted_regularizer_pack_v2 (12,247 songs, for the trainer)": ("https://huggingface.co/Mothersuperior/YuE2-hum-to-song/resolve/main/minted_regularizer_pack_v2.pt", "fs_audio")}
     @classmethod
     def INPUT_TYPES(cls): return {"required": {"asset": (list(cls.ASSETS.keys()),)}, "hidden": {"unique_id": "UNIQUE_ID"}}
     RETURN_TYPES = (); FUNCTION = "download"; OUTPUT_NODE = True; CATEGORY = TCAT
