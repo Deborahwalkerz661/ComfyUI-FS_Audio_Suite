@@ -17,7 +17,11 @@ def _fs_files(ext): return sorted(f for f in os.listdir(assets_dir()) if f.endsw
 
 class FSAudioTrainAssets:
     """Standalone: downloads the audio->token head (and other training assets) into models/fs_audio."""
-    ASSETS = {"tokenizer_head_joint_v5 (audio -> YuE2 tokens, current)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v5.safetensors", "fs_audio"),
+    ASSETS = {"tokenizer_head_joint_v9 (audio -> YuE2 tokens, current; audio-loss trained)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v9.safetensors", "fs_audio"),
+              "nar_lora_joint_v9_comfyui (decoder LoRA paired with the v9 head)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/nar_lora_joint_v9_comfyui.safetensors", "loras"),
+              "tokenizer_head_joint_v8 (audio-loss weight 2.0)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v8.safetensors", "fs_audio"),
+              "nar_lora_joint_v8_comfyui (decoder LoRA paired with the v8 head)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/nar_lora_joint_v8_comfyui.safetensors", "loras"),
+              "tokenizer_head_joint_v5 (latent-loss only)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v5.safetensors", "fs_audio"),
               "nar_lora_joint_v5_comfyui (decoder LoRA paired with the v5 head)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/nar_lora_joint_v5_comfyui.safetensors", "loras"),
               "tokenizer_head_joint_v4 (audio -> YuE2 tokens, previous)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v4.safetensors", "fs_audio"),
               "minted_regularizer_pack_v2 (12,247 songs, for the trainer)": ("https://huggingface.co/Mothersuperior/YuE2-hum-to-song/resolve/main/minted_regularizer_pack_v2.pt", "fs_audio")}
