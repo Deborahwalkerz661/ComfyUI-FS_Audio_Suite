@@ -1,7 +1,7 @@
 """Decoder (NAR) adapter training inside ComfyUI: the step that made off-genre real audio render faithfully for us.
 Trains a LoRA on the decoder's fused projections plus the full vae2llm / llm2vae layers with the flow-matching loss on the artist's own VAE
 latents, conditioned on the artist's tokens through ComfyUI's own AR prefix cache. Exports diffusion_model.* LoRA + .diff for the MODEL slot."""
-import os, math, time, random, json, numpy as np, torch, torch.nn as nn, torch.nn.functional as F
+import os, logging, math, time, random, json, numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 from safetensors.torch import save_file
 import comfy.model_management
@@ -17,15 +17,16 @@ class DecoderTrainer:
         for layer in self.dm.model.layers:
             self.saved_act.append(layer.mlp.merged_input_act); layer.mlp.merged_input_act = None
             for blk, proj in TARGETS: hk = LoRAHook(getattr(getattr(layer, blk), proj), rank, dev); self.hooks.append(hk); self.params += [hk.A, hk.B]
-        self.io_orig = {n: getattr(self.dm, n).weight.detach().clone() for n in ("vae2llm", "llm2vae")}; self.io_orig_b = {n: getattr(self.dm, n).bias.detach().clone() for n in ("vae2llm", "llm2vae")}
-        self.io_params = []
-        for n in ("vae2llm", "llm2vae"):
-            lin = getattr(self.dm, n); lin.weight.data = lin.weight.data.float(); lin.bias.data = lin.bias.data.float(); lin.weight.requires_grad_(True); lin.bias.requires_grad_(True); self.io_params += [lin.weight, lin.bias]
+        # vae2llm / llm2vae are trained through OUR OWN fp32 parameter copies used with F.linear in velocity(). Calling the modules themselves
+        # (self.dm.vae2llm(x)) routes through ComfyUI's dynamic-VRAM weight casting, which hands autograd a detached managed copy: grads never
+        # reached the module weights and every exported .diff was exactly zero (found by A.I.Warper, 2026-09-16).
+        self.io_orig = {n: getattr(self.dm, n).weight.detach().float().to(dev).clone() for n in ("vae2llm", "llm2vae")}; self.io_orig_b = {n: getattr(self.dm, n).bias.detach().float().to(dev).clone() for n in ("vae2llm", "llm2vae")}
+        self.io_w = {n: torch.nn.Parameter(self.io_orig[n].clone()) for n in ("vae2llm", "llm2vae")}; self.io_b = {n: torch.nn.Parameter(self.io_orig_b[n].clone()) for n in ("vae2llm", "llm2vae")}
+        self.io_params = [p for n in ("vae2llm", "llm2vae") for p in (self.io_w[n], self.io_b[n])]
+    def _io(self, n, x): return F.linear(x, self.io_w[n].to(x.dtype), self.io_b[n].to(x.dtype))
     def close(self):
         for hk in self.hooks: hk.remove()
         for layer, act in zip(self.dm.model.layers, self.saved_act): layer.mlp.merged_input_act = act
-        for n in ("vae2llm", "llm2vae"):
-            lin = getattr(self.dm, n); lin.weight.requires_grad_(False); lin.bias.requires_grad_(False); lin.weight.data = self.io_orig[n].clone(); lin.bias.data = self.io_orig_b[n].clone()
         torch.cuda.empty_cache()
     # ---- AR prefix cache via ComfyUI's own conditioning builder
     @torch.no_grad()
@@ -53,11 +54,11 @@ class DecoderTrainer:
         """xt: [N,64] window latents at noise level sigma -> predicted v [N,64] (ComfyUI FLOW convention: v = noise - x1)"""
         N = xt.shape[0] + 2; state = F.pad(xt, (0, 0, 1, 1))[None].to(torch.bfloat16)
         t = self.ms.timestep(torch.tensor([sigma], device=self.dev)).to(torch.bfloat16); time = self.dm.time_embedder(t, torch.bfloat16)[:, None]
-        state = self.dm.vae2llm(state) + time + self.dm.latent_pos_embed(N, state)[None]; cos, sin = self._rope(ar_len, N)
+        state = self._io("vae2llm", state) + time + self.dm.latent_pos_embed(N, state)[None]; cos, sin = self._rope(ar_len, N)
         for i, layer in enumerate(self.dm.model.layers):
             pk, pv = prefix[i, 0], prefix[i, 1]
             state = checkpoint(self._blk, layer, state, cos, sin, pk, pv, use_reentrant=False) if grad else self._blk(layer, state, cos, sin, pk, pv)
-        return self.dm.llm2vae(self.dm.model.norm(state))[0, 1:-1].float()
+        return self._io("llm2vae", self.dm.model.norm(state))[0, 1:-1].float()
     def flow_loss(self, x1, prefix, ar_len, sigma, noise, grad=True):
         xt = self.ms.noise_scaling(torch.tensor(sigma, device=self.dev), noise, x1); target = noise - x1
         return F.mse_loss(self.velocity(xt, sigma, prefix, ar_len, grad), target)
@@ -66,7 +67,8 @@ class DecoderTrainer:
         for l in range(self.L):
             for blk, proj in TARGETS: hk = self.hooks[i]; i += 1; out[f"diffusion_model.model.layers.{l}.{blk}.{proj}.lora_down.weight"] = hk.A.detach().to(torch.bfloat16).cpu().contiguous(); out[f"diffusion_model.model.layers.{l}.{blk}.{proj}.lora_up.weight"] = hk.B.detach().to(torch.bfloat16).cpu().contiguous()
         for n in ("vae2llm", "llm2vae"):
-            lin = getattr(self.dm, n); out[f"diffusion_model.{n}.diff"] = (lin.weight.detach().float() - self.io_orig[n].float()).cpu().contiguous(); out[f"diffusion_model.{n}.diff_b"] = (lin.bias.detach().float() - self.io_orig_b[n].float()).cpu().contiguous()
+            out[f"diffusion_model.{n}.diff"] = (self.io_w[n].detach().float() - self.io_orig[n]).cpu().contiguous(); out[f"diffusion_model.{n}.diff_b"] = (self.io_b[n].detach().float() - self.io_orig_b[n]).cpu().contiguous()
+        if all(out[f"diffusion_model.{n}.diff"].abs().max().item() == 0 for n in ("vae2llm", "llm2vae")): logging.warning("FS_Audio Decoder Trainer: vae2llm/llm2vae received no updates; the I/O layers did not train")
         save_file(out, path, metadata={"format": "pt", "fs_audio": "decoder adapter (NAR LoRA + vae2llm/llm2vae diffs)", "rank": str(self.rank), "scale": "1.0 (no alpha)", **{k: str(v) for k, v in meta.items()}})
 def train(model, clip, artist, cfg, status=lambda **k: None):
     """cfg: rank steps lr io_lr window_frames eval_every ckpt_from ckpt_every seed out_dir name"""
