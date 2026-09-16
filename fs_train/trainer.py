@@ -63,7 +63,7 @@ class PlannerTrainer:
             for blk, proj in TARGETS: hk = self.hooks[i]; i += 1; out[f"text_encoders.model.layers.{l}.{blk}.{proj}.lora_down.weight"] = hk.A.detach().to(torch.bfloat16).cpu().contiguous(); out[f"text_encoders.model.layers.{l}.{blk}.{proj}.lora_up.weight"] = hk.B.detach().to(torch.bfloat16).cpu().contiguous()
         save_file(out, path, metadata={"format": "pt", "fs_audio": "planner LoRA", "rank": str(self.rank), "scale": "1.0 (no alpha)", **{k: str(v) for k, v in meta.items()}})
 def train(clip, artist, regularizer, cfg, status=lambda **k: None):
-    """cfg: rank steps lr artist_fraction score_first_fraction end_weight max_tokens eval_every ckpt_from ckpt_every seed out_dir name warmup"""
+    """cfg: rank steps lr artist_fraction batch_songs score_first_fraction end_weight max_tokens eval_every ckpt_from ckpt_every seed out_dir name warmup"""
     torch.backends.cuda.matmul.allow_tf32 = True; random.seed(cfg["seed"]); torch.manual_seed(cfg["seed"])
     tr = PlannerTrainer(clip, cfg["rank"])
     try:
@@ -71,7 +71,7 @@ def train(clip, artist, regularizer, cfg, status=lambda **k: None):
         a_train = [x for x in artist if not x["held"] and (tr.fits(x, "off", mt) or not require_end)]; a_val = [x for x in artist if x["held"]] or a_train[:4]
         r_train = [x for x in (regularizer or []) if not x["held"] and (tr.fits(x, "off", mt) or not require_end)]; r_val = [x for x in (regularizer or []) if x["held"]][:6]
         has_abc = any(x.get("abc") for x in a_train); sf = cfg["score_first_fraction"] if has_abc else 0.0
-        status(stage="Training", detail=f"{len(a_train)} artist / {len(r_train)} regularizer songs, rank {cfg['rank']}, {cfg['steps']} steps" + (f", score-first {sf:.0%}" if sf else ""))
+        status(stage="Training", detail=f"{len(a_train)} artist / {len(r_train)} regularizer songs, rank {cfg['rank']}, {cfg['steps']} steps x {cfg.get('batch_songs', 1)} songs" + (f", score-first {sf:.0%}" if sf else ""))
         opt = torch.optim.AdamW(tr.params, lr=cfg["lr"], weight_decay=0.0, betas=(0.9, 0.95)); STEPS = cfg["steps"]; WARM = cfg.get("warmup", 50)
         sched = lambda st: cfg["lr"] * min(1, st / WARM) * (0.2 + 0.8 * 0.5 * (1 + math.cos(math.pi * min(st, STEPS) / STEPS)))
         @torch.no_grad()
@@ -87,12 +87,15 @@ def train(clip, artist, regularizer, cfg, status=lambda **k: None):
         for st in range(1, STEPS + 1):
             comfy.model_management.throw_exception_if_processing_interrupted()
             for g in opt.param_groups: g["lr"] = sched(st)
-            it = random.choice(a_train) if (not r_train or random.random() < cfg["artist_fraction"]) else random.choice(r_train)
-            layout = "full" if (it.get("abc") and random.random() < sf) else "off"
-            ids, ls = tr.seq(it, layout, mt); loss = tr.loss(ids, ls, cfg["end_weight"]); loss.backward()
-            if layout == "off" and sf and it.get("abc"):                                                    # always learn to write the score
-                pre, _ = build_sequences(it, tr.tok, "full"); aids = torch.tensor([pre[:-1]], device=tr.dev)        # text + [ABC_START] abc [ABC_END]: score-writing only
-                (tr.loss(aids, pre.index(ABC_START) + 1) * 0.5).backward()
+            K = max(1, int(cfg.get("batch_songs", 1))); loss_sum = 0.0
+            for _k in range(K):                                                                              # mixed batch: K whole songs per optimizer step, each coin-flipped artist/regularizer
+                it = random.choice(a_train) if (not r_train or random.random() < cfg["artist_fraction"]) else random.choice(r_train)
+                layout = "full" if (it.get("abc") and random.random() < sf) else "off"
+                ids, ls = tr.seq(it, layout, mt); loss = tr.loss(ids, ls, cfg["end_weight"]); (loss / K).backward(); loss_sum += float(loss) / K
+                if layout == "off" and sf and it.get("abc"):                                                # always learn to write the score
+                    pre, _ = build_sequences(it, tr.tok, "full"); aids = torch.tensor([pre[:-1]], device=tr.dev)    # text + [ABC_START] abc [ABC_END]: score-writing only
+                    (tr.loss(aids, pre.index(ABC_START) + 1) * 0.5 / K).backward()
+            loss = torch.tensor(loss_sum)
             torch.nn.utils.clip_grad_norm_(tr.params, 1.0); opt.step(); opt.zero_grad(set_to_none=True)
             if st % 5 == 0 or st <= 3: status(step=st, loss=float(loss), total=STEPS, eta=(time.time() - t0) / st * (STEPS - st), seq=int(ids.shape[1]))
             if st % cfg["eval_every"] == 0 or st == STEPS:

@@ -91,7 +91,8 @@ class FSAudioLoraTrainer:
         return {"required": {"pipe": ("FS_AUDIO_PIPE",), "dataset": ("FS_AUDIO_DATASET",), "lora_name": ("STRING", {"default": "my_artist_lora"}),
                              "rank": ("INT", {"default": 64, "min": 4, "max": 256, "step": 4}), "steps": ("INT", {"default": 1600, "min": 50, "max": 20000, "step": 50}),
                              "learning_rate": ("FLOAT", {"default": 4e-5, "min": 1e-6, "max": 1e-2, "step": 1e-5}),
-                             "artist_fraction": ("FLOAT", {"default": 0.5, "min": 0.05, "max": 1.0, "step": 0.05, "tooltip": "Coin flip: chance a step trains on the artist instead of the regularizer. 1.0 = artist only (memorizes fast)."}),
+                             "artist_fraction": ("FLOAT", {"default": 0.5, "min": 0.05, "max": 1.0, "step": 0.05, "tooltip": "Coin flip per song: chance it is an artist song instead of a regularizer song. 1.0 = artist only (memorizes fast)."}),
+                             "batch_songs": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1, "tooltip": "Whole songs per optimizer step (gradients accumulated). Above 1 the artist and regularizer songs share one update = mixed batch; smoother, and each step takes this many times longer."}),
                              "score_first_fraction": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Fraction of steps that put the transcribed score in front of the music (needs transcribe_scores in the dataset). The planner always learns to write scores."}),
                              "end_token_weight": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 50.0, "step": 1.0, "tooltip": "Up-weights the song-end token. Use ~20 for instrumental / long-song data that tends to run to the cap."}),
                              "max_tokens": ("INT", {"default": 8192, "min": 2048, "max": 16384, "step": 512, "tooltip": "Whole-song context. 8192 fits 24 GB; 12288 for 40+ GB. Songs longer than this are dropped so every example contains an ending."}),
@@ -100,10 +101,10 @@ class FSAudioLoraTrainer:
                 "optional": {"regularizer": ("FS_AUDIO_REGULARIZER",), "strength_clip": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05})},
                 "hidden": {"unique_id": "UNIQUE_ID"}}
     RETURN_TYPES = ("FS_AUDIO_LORAS", "STRING"); RETURN_NAMES = ("loras", "report"); FUNCTION = "train"; CATEGORY = TCAT
-    def train(self, pipe, dataset, lora_name, rank, steps, learning_rate, artist_fraction, score_first_fraction, end_token_weight, max_tokens, eval_every, checkpoint_from, checkpoint_every, seed, regularizer=None, strength_clip=1.0, unique_id=None):
+    def train(self, pipe, dataset, lora_name, rank, steps, learning_rate, artist_fraction, batch_songs, score_first_fraction, end_token_weight, max_tokens, eval_every, checkpoint_from, checkpoint_every, seed, regularizer=None, strength_clip=1.0, unique_id=None):
         artist = torch.load(dataset["path"], weights_only=False); reg = load_regularizer(regularizer["path"]) if regularizer else None
         out_dir = folder_paths.get_folder_paths("loras")[0]; status = lambda **k: _msg(unique_id, **k)
-        cfg = {"rank": rank, "steps": steps, "lr": learning_rate, "artist_fraction": artist_fraction, "score_first_fraction": score_first_fraction, "end_weight": end_token_weight, "max_tokens": max_tokens, "eval_every": eval_every, "ckpt_from": checkpoint_from, "ckpt_every": checkpoint_every, "seed": seed, "out_dir": out_dir, "name": lora_name}
+        cfg = {"rank": rank, "steps": steps, "lr": learning_rate, "artist_fraction": artist_fraction, "batch_songs": batch_songs, "score_first_fraction": score_first_fraction, "end_weight": end_token_weight, "max_tokens": max_tokens, "eval_every": eval_every, "ckpt_from": checkpoint_from, "ckpt_every": checkpoint_every, "seed": seed, "out_dir": out_dir, "name": lora_name}
         # ComfyUI executes nodes under torch.inference_mode(); weights loaded there are inference tensors and cannot enter an autograd graph.
         # So the trainer loads its own text-encoder copy with inference mode OFF (the pipe's copy is untouched) and trains with grad enabled.
         import comfy.sd
@@ -114,7 +115,7 @@ class FSAudioLoraTrainer:
             finally:
                 del clip; comfy.model_management.soft_empty_cache()
         final = res["final"] or os.path.join(out_dir, f"{lora_name}_best.safetensors"); status(stage="Done", detail=os.path.basename(final))
-        rep = {"lora": final, "best_artist_loss": round(res["best_artist_loss"], 4), "checkpoints": [os.path.basename(c) for c in res["checkpoints"]], "artist_songs": res["artist_train"], "regularizer_songs": res["regularizer_train"], "score_first": res["score_first"], "log": res["log"]}
+        rep = {"lora": final, "best_artist_loss": round(res["best_artist_loss"], 4), "checkpoints": [os.path.basename(c) for c in res["checkpoints"]], "artist_songs": res["artist_train"], "regularizer_songs": res["regularizer_train"], "score_first": res["score_first"], "batch_songs": batch_songs, "artist_fraction": artist_fraction, "log": res["log"]}
         return ([{"name": os.path.basename(final), "path": final, "model": 0.0, "clip": strength_clip}], json.dumps(rep, indent=1))
 
 class FSAudioDecoderTrainer:
