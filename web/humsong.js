@@ -86,7 +86,7 @@ app.registerExtension({
     api.addEventListener("fsaudio.train", ({ detail }) => { const node = app.graph.getNodeById(Number(detail.node)); node?.fsTrain?.(detail); });
   },
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    const FS = new Set(["FSAudioModelLoader", "FSAudioLoraLoader", "FSAudioAdapterLoader", "HumInput", "FSAudioSampler", "FSAudioOutput", "FSAudioAdapterDownloader", "FSAudioTrainAssets", "FSAudioDatasetBuilder", "FSAudioRegularizer", "FSAudioLoraTrainer"]); if (!FS.has(nodeData.name)) return;
+    const FS = new Set(["FSAudioModelLoader", "FSAudioLoraLoader", "FSAudioAdapterLoader", "HumInput", "FSAudioSampler", "FSAudioOutput", "FSAudioAdapterDownloader", "FSAudioTrainAssets", "FSAudioDatasetBuilder", "FSAudioRegularizer", "FSAudioLoraTrainer", "FSAudioDecoderTrainer"]); if (!FS.has(nodeData.name)) return;
     const onCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () { onCreated?.apply(this, arguments); paint(this); try { this.hsSetup?.(); } catch (e) { console.error("[HumSong] UI setup failed for", nodeData.name, e); } };
 
@@ -176,7 +176,7 @@ app.registerExtension({
         this.fsTrain = (d) => { if (d.stage) label.textContent = d.stage; det.textContent = d.detail || ""; if (d.pct != null) { seg.className = "hs-stage on"; seg.style.background = `linear-gradient(90deg, ${MINT} ${d.pct}%, ${LINE} ${d.pct}%)`; seg.style.animation = "none"; } if (d.stage === "Done") { seg.className = "hs-stage done"; seg.style.background = ""; out.textContent = d.detail || ""; } };
       };
     }
-    if (nodeData.name === "FSAudioLoraTrainer") {
+    if (nodeData.name === "FSAudioLoraTrainer" || nodeData.name === "FSAudioDecoderTrainer") {
       nodeType.prototype.hsSetup = function () {
         const wrap = document.createElement("div"); wrap.className = "hs-wrap"; wrap.appendChild(brand());
         const row = document.createElement("div"); const label = document.createElement("span"); label.className = "hs-label"; label.textContent = "Ready"; const det = document.createElement("span"); det.className = "hs-detail"; row.append(label, det);
