@@ -133,7 +133,8 @@ class FSAudioSampler:
             "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}),
             "song_length_cap": ("FLOAT", {"default": 240.0, "min": 30.0, "max": 360.0, "step": 1.0, "tooltip": "Upper bound in seconds; the song ends when the score ends."}),
             "score_mode": (["full", "melody", "off"], {"tooltip": "How the planner writes its score when no hum melody is used: full (melody + chords), melody, or off (no score)."}),
-            "steps": ("INT", {"default": 32, "min": 8, "max": 64}), "sampler": (cls._samplers(), {"default": "dpm_2"}), "scheduler": (cls._schedulers(), {"default": "sgm_uniform"})},
+            "steps": ("INT", {"default": 32, "min": 8, "max": 64}), "sampler": (cls._samplers(), {"default": "dpm_2"}), "scheduler": (cls._schedulers(), {"default": "sgm_uniform"}),
+            "Weirdness (cfg)": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 8.0, "step": 0.1, "tooltip": "Classifier-free guidance on the decoder. 1.0 = off (YuE2's native setting, single pass). Above 1.0 the decoder also runs an unconditioned pass and pushes away from it: more extreme, less safe renders, at double the render time."})},
             "optional": {"audio_conditioning": ("AUDIO",), "score_temperature": ("FLOAT", {"default": 0.7, "min": 0.1, "max": 1.5, "step": 0.05}), "music_temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 1.5, "step": 0.05})},
             "hidden": {"unique_id": "UNIQUE_ID"}}
     RETURN_TYPES = ("AUDIO", "STRING", "STRING"); RETURN_NAMES = ("song", "score", "info"); FUNCTION = "sample"; CATEGORY = CAT
@@ -143,7 +144,8 @@ class FSAudioSampler:
     @staticmethod
     def _schedulers():
         names = list(comfy.samplers.KSampler.SCHEDULERS); return ["sgm_uniform"] + [n for n in names if n != "sgm_uniform"]
-    def sample(self, pipe, style, lyrics, seed, song_length_cap, score_mode, steps, sampler, scheduler, audio_conditioning=None, score_temperature=0.7, music_temperature=1.0, unique_id=None):
+    def sample(self, pipe, style, lyrics, seed, song_length_cap, score_mode, steps, sampler, scheduler, audio_conditioning=None, score_temperature=0.7, music_temperature=1.0, unique_id=None, **kw):
+        cfg = float(kw.get("Weirdness (cfg)", 1.0))
         hum = audio_conditioning
         model, clip, vae, enc = pipe["model"], pipe["clip"], pipe["vae"], pipe.get("encoder"); nid = unique_id
         lyrics = lyrics.replace("\\n", "\n").replace("\r", "").strip(); style = " ".join(style.replace("\\n", " ").split())
@@ -189,7 +191,7 @@ class FSAudioSampler:
                 zh = vae.encode(w.movedim(1, -1))[0].T.float().cpu(); condl = torch.zeros(frames, 64); o = int(offset * FPS); L = min(len(zh), frames - o)
                 if L > 0: condl[o:o + L] = zh[:L]
                 dm._humsong = {"cond": condl, "proj": ad["proj"], "inject": ad["inject"], "g": influence}; dm.forward = types.MethodType(_hum_forward, dm); patched = True
-        try: samples = comfy.sample.sample(model, noise, steps, 1.0, sampler, scheduler, cond, negative, latent, denoise=1.0, seed=seed)
+        try: samples = comfy.sample.sample(model, noise, steps, cfg, sampler, scheduler, cond, negative, latent, denoise=1.0, seed=seed)
         finally:
             if patched: del dm.forward; del dm._humsong
         _status(nid, "Decoding audio", 90)
@@ -197,7 +199,7 @@ class FSAudioSampler:
         out_sr = getattr(vae, "audio_sample_rate_output", getattr(vae, "audio_sample_rate", 48000))
         score_view = (abc_hum + ("% ---- your hum ends here; the model continues ----\n" if melody == "continue from hum" and use_hum_melody else "") + full_abc[len(abc_hum):]) if full_abc else "(score off)"
         info = json.dumps({"seconds": round(frames / FPS, 1), "audio_conditioning": hum is not None, "hum": hum is not None, "hum_score_lines": hum_lines, "score_lines": full_abc.count("\n"), "melody": melody, "score_mode": cot, "hum_influence": influence, "hum_offset": offset,
-                           "adapter": ad["name"] if ad else None, "loras": pipe.get("applied", []), "seed": seed, "sampler": sampler, "scheduler": scheduler, "steps": steps}, indent=1)
+                           "adapter": ad["name"] if ad else None, "loras": pipe.get("applied", []), "seed": seed, "sampler": sampler, "scheduler": scheduler, "steps": steps, "cfg": cfg}, indent=1)
         _status(nid, "Done", 100, f"{frames / FPS:.0f} s")
         return ({"waveform": audio, "sample_rate": out_sr}, score_view, info)
 
