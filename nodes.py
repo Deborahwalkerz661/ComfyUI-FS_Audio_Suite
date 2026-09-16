@@ -2,7 +2,7 @@
 Stage 1 (score continuation): the hum's melody is transcribed to ABC and placed as the OPEN beginning of YuE2's score; the AR writes the rest
 of the score, then the song's semantic tokens. Stage 2 (prosody adapter): the hum's pitch/timing, as a sine carrier encoded by the VAE, is injected
 into the NAR decoder at several depths so the rendered vocal follows the actual hum where it is present."""
-import os, re, json, types, hashlib, numpy as np, torch, torch.nn.functional as F, torchaudio
+import os, logging, re, json, types, hashlib, numpy as np, torch, torch.nn.functional as F, torchaudio
 import folder_paths, comfy.sd, comfy.utils, comfy.sample, comfy.samplers, comfy.model_management, comfy.model_prefetch
 import comfy.audio_encoders.audio_encoders
 from comfy.ldm.yue2 import model as yue2_model
@@ -202,7 +202,7 @@ class FSAudioSampler:
         return ({"waveform": audio, "sample_rate": out_sr}, score_view, info)
 
 class FSAudioOutput:
-    """Saves the song as FLAC and shows a player + the score."""
+    """Saves the song as FLAC (plus .abc score and .json info sidecars) and shows a player + the score."""
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {"song": ("AUDIO",), "filename_prefix": ("STRING", {"default": "FS_Audio/song"})}, "optional": {"score": ("STRING", {"forceInput": True}), "info": ("STRING", {"forceInput": True})}}
@@ -215,6 +215,11 @@ class FSAudioOutput:
                 import soundfile as sf; sf.write(path, song["waveform"][i].float().cpu().numpy().T, song["sample_rate"], subtype="PCM_24")
             except ImportError: torchaudio.save(path, song["waveform"][i].float().cpu(), song["sample_rate"], format="flac")
             results.append({"filename": name, "subfolder": subfolder, "type": "output"})
+            # sidecars: the planner's score and the generation info land next to the FLAC
+            try:
+                if score: open(path[:-5] + ".abc", "w").write(score)
+                if info: open(path[:-5] + ".json", "w").write(info)
+            except OSError as e: logging.warning(f"FS_Audio Output: could not write sidecars for {name}: {e}")
         return {"ui": {"audio": results, "humsong_score": [score], "humsong_info": [info]}}
 
 ADAPTERS = {   # name -> (direct URL, destination folder type)
