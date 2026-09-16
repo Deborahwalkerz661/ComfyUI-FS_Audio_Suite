@@ -17,7 +17,9 @@ def _fs_files(ext): return sorted(f for f in os.listdir(assets_dir()) if f.endsw
 
 class FSAudioTrainAssets:
     """Standalone: downloads the audio->token head (and other training assets) into models/fs_audio."""
-    ASSETS = {"tokenizer_head_joint_v4 (audio -> YuE2 tokens)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v4.safetensors", "fs_audio"),
+    ASSETS = {"tokenizer_head_joint_v5 (audio -> YuE2 tokens, current)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v5.safetensors", "fs_audio"),
+              "nar_lora_joint_v5_comfyui (decoder LoRA paired with the v5 head)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/nar_lora_joint_v5_comfyui.safetensors", "loras"),
+              "tokenizer_head_joint_v4 (audio -> YuE2 tokens, previous)": ("https://huggingface.co/Mothersuperior/yue2-mothersuperior-realaudio-tokenizer-v4/resolve/main/tokenizer_head_joint_v4.safetensors", "fs_audio"),
               "minted_regularizer_pack_v2 (12,247 songs, for the trainer)": ("https://huggingface.co/Mothersuperior/YuE2-hum-to-song/resolve/main/minted_regularizer_pack_v2.pt", "fs_audio")}
     @classmethod
     def INPUT_TYPES(cls): return {"required": {"asset": (list(cls.ASSETS.keys()),)}, "hidden": {"unique_id": "UNIQUE_ID"}}
@@ -25,9 +27,9 @@ class FSAudioTrainAssets:
     @classmethod
     def IS_CHANGED(cls, asset, unique_id=None): return float("nan")
     def download(self, asset, unique_id=None):
-        url, folder = self.ASSETS[asset]; dest = os.path.join(assets_dir(), url.rsplit("/", 1)[-1])
-        if os.path.exists(dest) and os.path.getsize(dest) > 1_000_000: return {"ui": {"fs_download": [f"{os.path.basename(dest)} — already in models/fs_audio"]}}
-        _download(url, dest, unique_id); return {"ui": {"fs_download": [f"{os.path.basename(dest)} -> models/fs_audio"]}}
+        url, folder = self.ASSETS[asset]; ddir = folder_paths.get_folder_paths("loras")[0] if folder == "loras" else assets_dir(); dest = os.path.join(ddir, url.rsplit("/", 1)[-1])
+        if os.path.exists(dest) and os.path.getsize(dest) > 1_000_000: return {"ui": {"fs_download": [f"{os.path.basename(dest)} — already in models/{folder}"]}}
+        _download(url, dest, unique_id); return {"ui": {"fs_download": [f"{os.path.basename(dest)} -> models/{folder}"]}}
 
 class FSAudioDatasetBuilder:
     """A folder of songs -> training dataset: real-audio tokens (public MERT + our head), captions/lyrics from sidecars, optional scores from the pipe's melody transcriber."""

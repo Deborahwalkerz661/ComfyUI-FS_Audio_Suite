@@ -28,7 +28,7 @@ Four additive nodes turn a folder of songs into a planner LoRA that plugs straig
 
 | node | role |
 |---|---|
-| **⬇ FS_Audio Training Assets** | standalone; downloads the audio → token head and the minted regularizer pack into `models/fs_audio/`. Run once per asset. |
+| **⬇ FS_Audio Training Assets** | standalone; downloads the audio → token head (v5, plus the previous v4), the matching decoder LoRA `nar_lora_joint_v5_comfyui` (into `models/loras/`), and the minted regularizer pack into `models/fs_audio/`. Run once per asset. Load the joint LoRA in the Model Loader chain whenever you train or render from real-audio tokens. |
 | **📦 FS_Audio Dataset Builder** | folder of songs (`<song>.txt` = style caption, `<song>.lyrics.txt` = lyrics; defaults for missing ones) → real-audio tokens (public MERT-v2-FullSong layer 20 + our head), lyrics normalized to bare tags, optional chord-annotated ABC scores from the pipe's melody transcriber, hash-based hold-out. |
 | **🧪 FS_Audio Regularizer** | the minted regularizer pack (`models/fs_audio/*.pt`): YuE2's own songs, coin-flipped against the artist so the LoRA keeps the base model's range. |
 | **🏋 FS_Audio LoRA Trainer** | trains the **planner** (what the artist plays) on ComfyUI's own YuE2; outputs a `loras` chain entry (clip strength) plus a JSON report. Saves `<name>_best`, `<name>_step…` into `models/loras/` in ComfyUI's native layout. |
