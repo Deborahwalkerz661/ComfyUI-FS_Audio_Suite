@@ -42,4 +42,6 @@ Captions: the builder does not caption for you. Put `<song>.txt` (style) and `<s
 
 ## Credits
 
+- **[Ostris](https://github.com/ostris/ai-toolkit)**'s YuE2 extension for ai-toolkit carries a fix we had missed: MERT-v2's rotary `inv_freq` buffer is non-persistent and newer transformers leave it uninitialised, so the Dataset Builder's audio → token step was running MERT with no positional encoding (only ~37% of tokens matched the correct ones). Fixed in the tokenizer by rebuilding the buffer after load, the same way ai-toolkit does. Datasets built before this fix should be rebuilt.
+
 - **[@AIWarper](https://x.com/AIWarper)** found and reported the Decoder Adapter Trainer bug where the `vae2llm` / `llm2vae` layers received no gradient under ComfyUI's dynamic-VRAM weight casting, so every exported `.diff` was zero while the LoRA tensors trained normally. Fixed in bf4ba64: the trainer now runs those layers through its own fp32 parameters and warns if they ever export unchanged. Thank you.

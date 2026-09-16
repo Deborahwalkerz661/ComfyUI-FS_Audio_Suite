@@ -10,13 +10,25 @@ class Tok(nn.Module):
         super().__init__(); s.inp = nn.Linear(din, D); s.pos = nn.Parameter(torch.zeros(1, WIN, D))
         layer = nn.TransformerEncoderLayer(D, H, 4 * D, dropout=0.1, batch_first=True, norm_first=True, activation="gelu"); s.enc = nn.TransformerEncoder(layer, L); s.norm = nn.LayerNorm(D); s.head = nn.Linear(D, VOCAB)
     def forward(s, x): return s.head(s.norm(s.enc(s.inp(x) + s.pos[:, :x.shape[1]])))
+def _rebuild_rotary(model):
+    """MERT2's RotaryEmbedding keeps inv_freq as a NON-persistent buffer; newer transformers load through a meta device and leave it
+    uninitialised (near-zero garbage), which silently strips MERT of positional information: only ~37% of the head's tokens then match
+    the correct ones. Recompute it from the module's own formula and drop any cached cos/sin. (Fix from Ostris's ai-toolkit YuE2 extension.)"""
+    n = 0
+    for m in model.modules():
+        if hasattr(m, "inv_freq") and hasattr(m, "head_dim") and hasattr(m, "base"):
+            inv = 1.0 / (m.base ** (torch.arange(0, m.head_dim, 2, dtype=torch.float32) / m.head_dim)); m.inv_freq = inv.to(device=m.inv_freq.device)
+            for attr, val in (("_cos", None), ("_sin", None), ("_sequence_length", 0), ("_cache_device", None)):
+                if hasattr(m, attr): setattr(m, attr, val)
+            n += 1
+    return n
 class AudioTokenizer:
     """Loads MERT (through transformers, cached under models/fs_audio/hf) and the head; tokenize(waveform, sr) -> int32 tokens @25 Hz."""
     def __init__(self, head_file, device="cuda"):
         from transformers import AutoModel, AutoFeatureExtractor
         self.dev = device; cache = os.path.join(assets_dir(), "hf")
         self.proc = AutoFeatureExtractor.from_pretrained("m-a-p/MERT-v2-FullSong", trust_remote_code=True, cache_dir=cache)
-        self.mert = AutoModel.from_pretrained("m-a-p/MERT-v2-FullSong", trust_remote_code=True, cache_dir=cache).to(device).eval()
+        self.mert = AutoModel.from_pretrained("m-a-p/MERT-v2-FullSong", trust_remote_code=True, cache_dir=cache).to(device).eval(); _rebuild_rotary(self.mert)
         self.head = Tok().to(device).eval(); sd = load_file(head_file); self.head.load_state_dict(sd.get("model", sd) if isinstance(sd, dict) and "model" in sd else sd)
     @torch.no_grad()
     def features(self, wav, sr):
