@@ -39,3 +39,7 @@ Trainer switches, all the tricks from our runs: **rank** (64), **steps** (1600),
 Wiring: Model Loader (with `sheetsage2` if you want scores) → Dataset Builder and both trainers' `pipe`; Dataset Builder → trainers' `dataset`; Regularizer → LoRA Trainer `regularizer`; chain the Decoder Adapter Trainer's `loras` into the LoRA Trainer's output (or the reverse) and feed the chain into a second Model Loader `loras` → Sampler. For an artist far from the base model's genres, train both: the decoder adapter carries their sound, the planner LoRA their writing.
 
 Captions: the builder does not caption for you. Put `<song>.txt` (style) and `<song>.lyrics.txt` next to each song, or rely on the defaults. Style text is flattened to one line with straight quotes; lyrics are reduced to bare section tags (production notes in brackets are dropped, literal `\n` becomes a line break). With `transcribe_scores` on, `auto_tempo_key` appends the transcribed tempo and key to captions that lack them. Memory: 8192 tokens fits a 24 GB card (~15 GB peak); use 12288 on 40 GB+.
+
+## Credits
+
+- **[@AIWarper](https://x.com/AIWarper)** found and reported the Decoder Adapter Trainer bug where the `vae2llm` / `llm2vae` layers received no gradient under ComfyUI's dynamic-VRAM weight casting, so every exported `.diff` was zero while the LoRA tensors trained normally. Fixed in bf4ba64: the trainer now runs those layers through its own fp32 parameters and warns if they ever export unchanged. Thank you.
