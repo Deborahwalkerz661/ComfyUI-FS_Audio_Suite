@@ -6,16 +6,18 @@ import os, re, json, glob, hashlib, numpy as np, torch
 ABC_START, ABC_END, MUSIC_START, MUSIC_END, CODEC_OFFSET = 151847, 151848, 151851, 151852, 151853
 AUDIO_EXT = (".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".opus")
 TAGS = {"intro", "verse", "pre-chorus", "chorus", "bridge", "outro"}
+SECTIONS = [(r"pre[\s-]?chorus", "Pre-Chorus"), (r"chorus", "Chorus"), (r"verse", "Verse"), (r"bridge", "Bridge"), (r"intro", "Intro"), (r"outro", "Outro"), (r"hook", "Hook"), (r"refrain", "Refrain"), (r"interlude", "Interlude"), (r"solo", "Solo"), (r"drop", "Drop"), (r"breakdown", "Breakdown"), (r"break", "Break")]   # first match wins
 def normalize_lyrics(text):
-    """bare section tags only; drop production notes in brackets; literal \\n -> newline; curly quotes -> straight"""
+    """YuE2-native section tags ([Verse 2], [Pre-Chorus], Title case; ai-toolkit normalisation); other bracketed lines (production notes) dropped; literal \\n -> newline; curly quotes -> straight"""
     t = (text or "").replace("\\n", "\n").replace("\r", ""); t = re.sub("[‘’]", "'", t); t = re.sub("[“”]", '"', t); out = []
     for ln in t.split("\n"):
         m = re.match(r"^\s*\[([^\]]+)\]\s*$", ln)
         if m:
-            low = m.group(1).lower(); tag = next((k for k in ("pre-chorus", "chorus", "verse", "bridge", "intro", "outro") if k in low), None)
-            if low.strip() == "instrumental": out.append("[instrumental]")
-            elif tag: out.append(f"[{tag}]")
-            continue
+            low = m.group(1).lower().strip(); tag = next((name for pat, name in SECTIONS if re.search(rf"\b{pat}\b", low)), None)
+            if low == "instrumental": out.append("[instrumental]")
+            elif tag:                                                       # YuE2's native layout: Title case, optional number ([Verse 2], [Pre-Chorus])
+                num = re.search(r"\b(\d+)\b", low); out.append(f"[{tag}{' ' + num.group(1) if num else ''}]")
+            continue                                                        # any other bracketed line is a production note: dropped
         out.append(ln.rstrip())
     s = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip(); return s if s else "[instrumental]"
 def sidecar(path, *exts):

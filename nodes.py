@@ -135,7 +135,8 @@ class FSAudioSampler:
             "score_mode": (["full", "melody", "off"], {"tooltip": "How the planner writes its score when no hum melody is used: full (melody + chords), melody, or off (no score)."}),
             "steps": ("INT", {"default": 32, "min": 8, "max": 64}), "sampler": (cls._samplers(), {"default": "dpm_2"}), "scheduler": (cls._schedulers(), {"default": "sgm_uniform"}),
             "Weirdness (cfg)": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 8.0, "step": 0.1, "tooltip": "Classifier-free guidance on the decoder. 1.0 = off (YuE2's native setting, single pass). Above 1.0 the decoder also runs an unconditioned pass and pushes away from it: more extreme, less safe renders, at double the render time."})},
-            "optional": {"audio_conditioning": ("AUDIO",), "score_temperature": ("FLOAT", {"default": 0.7, "min": 0.1, "max": 1.5, "step": 0.05}), "music_temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 1.5, "step": 0.05})},
+            "optional": {"audio_conditioning": ("AUDIO",), "score_temperature": ("FLOAT", {"default": 0.7, "min": 0.1, "max": 1.5, "step": 0.05}), "music_temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 1.5, "step": 0.05}),
+                         "repetition_penalty": ("FLOAT", {"default": 1.2, "min": 1.0, "max": 2.0, "step": 0.05, "tooltip": "Planner token sampling. 1.2 is the reference value; 1.0 lets a memorized song replay verbatim, higher knocks it off that path."})},
             "hidden": {"unique_id": "UNIQUE_ID"}}
     RETURN_TYPES = ("AUDIO", "STRING", "STRING"); RETURN_NAMES = ("song", "score", "info"); FUNCTION = "sample"; CATEGORY = CAT
     @staticmethod
@@ -144,7 +145,7 @@ class FSAudioSampler:
     @staticmethod
     def _schedulers():
         names = list(comfy.samplers.KSampler.SCHEDULERS); return ["sgm_uniform"] + [n for n in names if n != "sgm_uniform"]
-    def sample(self, pipe, style, lyrics, seed, song_length_cap, score_mode, steps, sampler, scheduler, audio_conditioning=None, score_temperature=0.7, music_temperature=1.0, unique_id=None, **kw):
+    def sample(self, pipe, style, lyrics, seed, song_length_cap, score_mode, steps, sampler, scheduler, audio_conditioning=None, score_temperature=0.7, music_temperature=1.0, repetition_penalty=1.2, unique_id=None, **kw):
         cfg = float(kw.get("Weirdness (cfg)", 1.0))
         hum = audio_conditioning
         model, clip, vae, enc = pipe["model"], pipe["clip"], pipe["vae"], pipe.get("encoder"); nid = unique_id
@@ -173,7 +174,7 @@ class FSAudioSampler:
         # -- semantic tokens + acoustic conditioning
         _status(nid, "Writing the song", 35, f"score {full_abc.count(chr(10))} lines" if full_abc else "no score")
         kw = {"abc": full_abc} if (full_abc and cot != "off") else {}
-        tokens2 = clip.tokenize(style, lyrics=lyrics, cot=cot, seed=seed, max_tokens=max(200, int(song_length_cap * FPS)), temperature=music_temperature, top_p=0.95, top_k=100, repetition_penalty=1.2, **kw)
+        tokens2 = clip.tokenize(style, lyrics=lyrics, cot=cot, seed=seed, max_tokens=max(200, int(song_length_cap * FPS)), temperature=music_temperature, top_p=0.95, top_k=100, repetition_penalty=repetition_penalty, **kw)
         cond = clip.encode_from_tokens_scheduled(tokens2); frames = cond[0][1]["yue2_frames"]
         negative = [[torch.zeros_like(cond[0][0]), dict(cond[0][1])]]
         # -- render (with hum injection when an adapter and a hum are present)
@@ -199,7 +200,7 @@ class FSAudioSampler:
         out_sr = getattr(vae, "audio_sample_rate_output", getattr(vae, "audio_sample_rate", 48000))
         score_view = (abc_hum + ("% ---- your hum ends here; the model continues ----\n" if melody == "continue from hum" and use_hum_melody else "") + full_abc[len(abc_hum):]) if full_abc else "(score off)"
         info = json.dumps({"seconds": round(frames / FPS, 1), "audio_conditioning": hum is not None, "hum": hum is not None, "hum_score_lines": hum_lines, "score_lines": full_abc.count("\n"), "melody": melody, "score_mode": cot, "hum_influence": influence, "hum_offset": offset,
-                           "adapter": ad["name"] if ad else None, "loras": pipe.get("applied", []), "seed": seed, "sampler": sampler, "scheduler": scheduler, "steps": steps, "cfg": cfg}, indent=1)
+                           "adapter": ad["name"] if ad else None, "loras": pipe.get("applied", []), "seed": seed, "sampler": sampler, "scheduler": scheduler, "steps": steps, "cfg": cfg, "repetition_penalty": repetition_penalty}, indent=1)
         _status(nid, "Done", 100, f"{frames / FPS:.0f} s")
         return ({"waveform": audio, "sample_rate": out_sr}, score_view, info)
 

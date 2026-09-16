@@ -8,10 +8,11 @@ from safetensors.torch import save_file
 import comfy.model_management
 from .data import build_sequences, ABC_START, MUSIC_END, CODEC_OFFSET
 class LoRAHook:
-    """Adds (x @ A^T) @ B^T to a frozen comfy Linear via a forward hook (comfy reads .weight directly in places, so no module wrapping)."""
+    """Adds (x @ A^T) @ B^T to a frozen comfy Linear via a forward hook (comfy reads .weight directly in places, so no module wrapping).
+    `active` switches the delta off, which gives the base model's output for the KL trust region."""
     def __init__(s, base, r, dev):
-        s.A = nn.Parameter(torch.randn(r, base.in_features, device=dev) * (1 / math.sqrt(base.in_features))); s.B = nn.Parameter(torch.zeros(base.out_features, r, device=dev))
-        s.h = base.register_forward_hook(lambda mod, inp, out: out + ((inp[0].float() @ s.A.T) @ s.B.T).to(out.dtype))
+        s.A = nn.Parameter(torch.randn(r, base.in_features, device=dev) * (1 / math.sqrt(base.in_features))); s.B = nn.Parameter(torch.zeros(base.out_features, r, device=dev)); s.active = True
+        s.h = base.register_forward_hook(lambda mod, inp, out: out + ((inp[0].float() @ s.A.T) @ s.B.T).to(out.dtype) if s.active else out)
     def remove(s): s.h.remove()
 TARGETS = (("self_attn", "qkv_proj"), ("self_attn", "o_proj"), ("mlp", "gate_up_proj"), ("mlp", "down_proj"))
 class PlannerTrainer:
@@ -46,10 +47,30 @@ class PlannerTrainer:
         x = self.L2.embed_tokens(ids, out_dtype=torch.bfloat16); cos, sin = self._rope(ids.shape[1])
         for layer in self.L2.layers: x = checkpoint(self._blk, layer, x, cos, sin, use_reentrant=False) if grad else self._blk(layer, x, cos, sin)
         return self.L2.norm(x)
-    def loss(self, ids, loss_start, end_w=1.0, grad=True):
-        h = self.hidden(ids, grad)[0, loss_start - 1:-1]; tgt = ids[0, loss_start:]; w = torch.ones_like(tgt, dtype=torch.float32); w[tgt == MUSIC_END] = end_w; tot = 0.
-        for s in range(0, h.shape[0], 1024): tot = tot + (F.cross_entropy(self.L2.lm_head(h[s:s + 1024]).float(), tgt[s:s + 1024], reduction="none") * w[s:s + 1024]).sum()
-        return tot / w.sum()
+    def set_active(self, flag):
+        for hk in self.hooks: hk.active = flag
+    def loss(self, ids, loss_start, end_w=1.0, grad=True, kl_w=0.0, chunk=512):
+        """Whole-song next-token CE (END up-weighted) and, with kl_w > 0, a trust region KL(base || lora) on the next-token distributions
+        (base = the same sequence with the LoRA switched off). Logits are produced 512 positions at a time inside a checkpoint, so the fp32
+        [positions, vocab] tensors never exist all at once (ai-toolkit's trick); whole 8k-token songs fit on 24 GB. Returns (ce, kl)."""
+        h = self.hidden(ids, grad)[0, loss_start - 1:-1]; tgt = ids[0, loss_start:]; w = torch.ones_like(tgt, dtype=torch.float32); w[tgt == MUSIC_END] = end_w
+        bh = None
+        if kl_w > 0:
+            self.set_active(False)
+            try:
+                with torch.no_grad(): bh = self.hidden(ids, False)[0, loss_start - 1:-1]
+            finally: self.set_active(True)
+        def chunk_losses(hc, tc, wc, bc):
+            lg = self.L2.lm_head(hc).float(); ce = (F.cross_entropy(lg, tc, reduction="none") * wc).sum()
+            if bc is None: return ce, ce.new_zeros(())
+            with torch.no_grad(): blp = torch.log_softmax(self.L2.lm_head(bc).float(), -1)
+            kl = F.kl_div(torch.log_softmax(lg, -1), blp, log_target=True, reduction="sum"); return ce, kl
+        ce_t = h.new_zeros((), dtype=torch.float32); kl_t = h.new_zeros((), dtype=torch.float32)
+        for s in range(0, h.shape[0], chunk):
+            args = (h[s:s + chunk], tgt[s:s + chunk], w[s:s + chunk], None if bh is None else bh[s:s + chunk])
+            ce, kl = checkpoint(chunk_losses, *args, use_reentrant=False) if (grad and torch.is_grad_enabled()) else chunk_losses(*args)
+            ce_t = ce_t + ce; kl_t = kl_t + kl
+        return ce_t / w.sum(), kl_t / h.shape[0]
     # ---- sequences
     def seq(self, item, layout, max_tokens):
         pre, ls = build_sequences(item, self.tok, layout); cod = [int(c) + CODEC_OFFSET for c in item["codec"]]; room = max_tokens - len(pre) - 1
@@ -57,11 +78,13 @@ class PlannerTrainer:
     def fits(self, item, layout, max_tokens):
         pre, _ = build_sequences(item, self.tok, layout); return len(pre) + len(item["codec"]) + 1 <= max_tokens
     # ---- export in ComfyUI's native LoRA layout (AR = text_encoders.*)
-    def export(self, path, meta):
+    def state(self):
         out = {}; i = 0
         for l in range(len(self.L2.layers)):
             for blk, proj in TARGETS: hk = self.hooks[i]; i += 1; out[f"text_encoders.model.layers.{l}.{blk}.{proj}.lora_down.weight"] = hk.A.detach().to(torch.bfloat16).cpu().contiguous(); out[f"text_encoders.model.layers.{l}.{blk}.{proj}.lora_up.weight"] = hk.B.detach().to(torch.bfloat16).cpu().contiguous()
-        save_file(out, path, metadata={"format": "pt", "fs_audio": "planner LoRA", "rank": str(self.rank), "scale": "1.0 (no alpha)", **{k: str(v) for k, v in meta.items()}})
+        return out
+    def export(self, path, meta):
+        save_file(self.state(), path, metadata={"format": "pt", "fs_audio": "planner LoRA", "rank": str(self.rank), "scale": "1.0 (no alpha)", **{k: str(v) for k, v in meta.items()}})
 def train(clip, artist, regularizer, cfg, status=lambda **k: None):
     """cfg: rank steps lr artist_fraction batch_songs score_first_fraction end_weight max_tokens eval_every ckpt_from ckpt_every seed out_dir name warmup"""
     torch.backends.cuda.matmul.allow_tf32 = True; random.seed(cfg["seed"]); torch.manual_seed(cfg["seed"])
@@ -80,7 +103,7 @@ def train(clip, artist, regularizer, cfg, status=lambda **k: None):
             for tag, items in (("artist", a_val[:6]), ("regularizer", r_val)):
                 if not items: continue
                 tot = 0
-                for it in items: ids, ls = tr.seq(it, "off", mt); tot += tr.loss(ids, ls, grad=False).item()
+                for it in items: ids, ls = tr.seq(it, "off", mt); tot += tr.loss(ids, ls, grad=False)[0].item()
                 r[tag] = tot / len(items)
             return r
         log = []; e = evaluate(); log.append({"step": 0, **e}); status(step=0, evals=e, total=STEPS); best = e.get("artist", 9e9); t0 = time.time(); os.makedirs(cfg["out_dir"], exist_ok=True); ckpts = []
@@ -91,10 +114,10 @@ def train(clip, artist, regularizer, cfg, status=lambda **k: None):
             for _k in range(K):                                                                              # mixed batch: K whole songs per optimizer step, each coin-flipped artist/regularizer
                 it = random.choice(a_train) if (not r_train or random.random() < cfg["artist_fraction"]) else random.choice(r_train)
                 layout = "full" if (it.get("abc") and random.random() < sf) else "off"
-                ids, ls = tr.seq(it, layout, mt); loss = tr.loss(ids, ls, cfg["end_weight"]); (loss / K).backward(); loss_sum += float(loss) / K
+                ids, ls = tr.seq(it, layout, mt); loss, _kl = tr.loss(ids, ls, cfg["end_weight"]); (loss / K).backward(); loss_sum += float(loss) / K
                 if layout == "off" and sf and it.get("abc"):                                                # always learn to write the score
                     pre, _ = build_sequences(it, tr.tok, "full"); aids = torch.tensor([pre[:-1]], device=tr.dev)    # text + [ABC_START] abc [ABC_END]: score-writing only
-                    (tr.loss(aids, pre.index(ABC_START) + 1) * 0.5 / K).backward()
+                    (tr.loss(aids, pre.index(ABC_START) + 1)[0] * 0.5 / K).backward()
             loss = torch.tensor(loss_sum)
             torch.nn.utils.clip_grad_norm_(tr.params, 1.0); opt.step(); opt.zero_grad(set_to_none=True)
             if st % 5 == 0 or st <= 3: status(step=st, loss=float(loss), total=STEPS, eta=(time.time() - t0) / st * (STEPS - st), seq=int(ids.shape[1]))

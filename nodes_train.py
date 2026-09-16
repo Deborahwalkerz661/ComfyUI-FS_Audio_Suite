@@ -8,6 +8,7 @@ from .fs_train.tokenizer import AudioTokenizer, assets_dir
 from .fs_train.data import list_audio, sidecar, normalize_lyrics, held, load_regularizer
 from .fs_train import trainer as fs_trainer
 from .fs_train import decoder as fs_decoder
+from .fs_train import artist as fs_artist
 TCAT = CAT + "/Training"
 def _msg(node_id, **kw):
     try: PromptServer.instance.send_sync("fsaudio.train", {"node": node_id, **kw})
@@ -54,7 +55,7 @@ class FSAudioDatasetBuilder:
         if not files: raise ValueError(f"No audio files in {folder}")
         head = os.path.join(assets_dir(), tokenizer_head)
         if not os.path.exists(head): raise ValueError("Tokenizer head missing: run the FS_Audio Training Assets node first.")
-        enc = pipe.get("encoder") if transcribe_scores else None
+        enc = pipe.get("encoder") if transcribe_scores else None; repaired = []
         if transcribe_scores and enc is None: raise ValueError("transcribe_scores needs a melody_transcriber in the Model Loader (sheetsage2).")
         _msg(unique_id, stage="Loading tokenizer", pct=0); tk = AudioTokenizer(head); items = []; t0 = time.time()
         for i, f in enumerate(files):
@@ -69,8 +70,13 @@ class FSAudioDatasetBuilder:
                 lat = vae.encode(w[None].movedim(1, -1))[0].T.to(torch.float16).cpu().numpy()                     # [T,64]
             if enc is not None:
                 _msg(unique_id, stage="Transcribing score", pct=int(100 * i / len(files)), detail=name)
-                try: abc = enc.generate_abc(wav[None], sr, melody_only=False)[0].strip()
-                except Exception as e: abc = None
+                abc = None; note = ""
+                for how, kw, w_ in (("full", {"melody_only": False}, wav), ("melody-only", {"melody_only": True}, wav), ("first 4 min, full", {"melody_only": False}, wav[..., :sr * 240]), ("first 4 min, melody-only", {"melody_only": True}, wav[..., :sr * 240])):
+                    try:
+                        cand = enc.generate_abc(w_[None], sr, **kw)[0].strip()
+                        if cand and cand.count("|") >= 4: abc = cand; note = "" if how == "full" else f" (score repaired: {how})"; break
+                    except Exception as e: continue                            # repair chain instead of dropping the track (ai-toolkit does row-level repair; this is the coarse version)
+                if note: repaired.append(name + note)
                 if abc and auto_tempo_key:      # our captions always carried tempo + key; read them from the transcribed score header when the caption lacks them
                     q = re.search(r"^Q:\s*1/4\s*=\s*(\d+)", abc, re.M); k = re.search(r"^K:\s*([A-G][#b]?)(m|min|maj|dor|mix)?", abc, re.M)
                     if q and not re.search(r"\bBPM\b", style, re.I): style = f"{style}, {q.group(1)} BPM"
@@ -90,65 +96,49 @@ class FSAudioRegularizer:
         if not os.path.exists(p): raise ValueError(f"Regularizer pack not found: {p}")
         return ({"path": p},)
 
-class FSAudioLoraTrainer:
-    """Trains a planner (AR) LoRA on ComfyUI's own YuE2 and hands it back as a loras chain entry for the Model Loader."""
+class FSAudioArtistTrainer:
+    """Trains a whole artist in one run on ComfyUI's own YuE2: the planner LoRA (what they write) and the decoder LoRA (how they sound) in one
+    loop, exported as ONE file that a single FS_Audio Lora Loader applies to both halves. Recipe: whole-song planner CE from the song's start with a
+    KL(base||lora) trust region, artist/regularizer mixed batches, score-first half the time, decoder flow-matching on the artist's latents conditioned
+    on the live planner, EMA weights, dense checkpoint ladder, held-out eval for both halves."""
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"pipe": ("FS_AUDIO_PIPE",), "dataset": ("FS_AUDIO_DATASET",), "lora_name": ("STRING", {"default": "my_artist_lora"}),
-                             "rank": ("INT", {"default": 64, "min": 4, "max": 256, "step": 4}), "steps": ("INT", {"default": 1600, "min": 50, "max": 20000, "step": 50}),
-                             "learning_rate": ("FLOAT", {"default": 4e-5, "min": 1e-6, "max": 1e-2, "step": 1e-5}),
-                             "artist_fraction": ("FLOAT", {"default": 0.5, "min": 0.05, "max": 1.0, "step": 0.05, "tooltip": "Coin flip per song: chance it is an artist song instead of a regularizer song. 1.0 = artist only (memorizes fast)."}),
-                             "batch_songs": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1, "tooltip": "Whole songs per optimizer step (gradients accumulated). Above 1 the artist and regularizer songs share one update = mixed batch; smoother, and each step takes this many times longer."}),
-                             "score_first_fraction": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Fraction of steps that put the transcribed score in front of the music (needs transcribe_scores in the dataset). The planner always learns to write scores."}),
-                             "end_token_weight": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 50.0, "step": 1.0, "tooltip": "Up-weights the song-end token. Use ~20 for instrumental / long-song data that tends to run to the cap."}),
-                             "max_tokens": ("INT", {"default": 8192, "min": 2048, "max": 16384, "step": 512, "tooltip": "Whole-song context. 8192 fits 24 GB; 12288 for 40+ GB. Songs longer than this are dropped so every example contains an ending."}),
-                             "eval_every": ("INT", {"default": 100, "min": 25, "max": 1000, "step": 25}), "checkpoint_from": ("INT", {"default": 600, "min": 0, "max": 20000, "step": 50}), "checkpoint_every": ("INT", {"default": 200, "min": 50, "max": 5000, "step": 50}),
+        return {"required": {"pipe": ("FS_AUDIO_PIPE",), "dataset": ("FS_AUDIO_DATASET",), "lora_name": ("STRING", {"default": "my_artist"}),
+                             "steps": ("INT", {"default": 600, "min": 50, "max": 20000, "step": 50, "tooltip": "Planner optimizer steps. Rule of thumb: ~10 passes over the artist songs (steps x batch_songs x artist_fraction / songs); more memorizes."}),
+                             "decoder_steps": ("INT", {"default": 1500, "min": 50, "max": 20000, "step": 50, "tooltip": "Decoder flow steps, spread evenly across the planner steps. Converges in ~1000 on a few dozen songs."}),
+                             "rank_planner": ("INT", {"default": 64, "min": 4, "max": 256, "step": 4}), "rank_decoder": ("INT", {"default": 32, "min": 4, "max": 128, "step": 4}),
+                             "planner_lr": ("FLOAT", {"default": 3e-5, "min": 1e-6, "max": 1e-2, "step": 1e-6}), "decoder_lr": ("FLOAT", {"default": 4e-5, "min": 1e-6, "max": 1e-3, "step": 1e-6}), "io_lr": ("FLOAT", {"default": 2e-5, "min": 1e-6, "max": 1e-3, "step": 1e-6, "tooltip": "For the decoder's full vae2llm / llm2vae layers."}),
+                             "artist_fraction": ("FLOAT", {"default": 0.3, "min": 0.05, "max": 1.0, "step": 0.05, "tooltip": "Coin flip per song: artist song vs regularizer song. 1.0 = artist only (memorizes fast)."}),
+                             "batch_songs": ("INT", {"default": 2, "min": 1, "max": 8, "step": 1, "tooltip": "Whole songs per planner step, gradients accumulated; artist and regularizer songs share one update (mixed batch)."}),
+                             "kl_weight": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 5.0, "step": 0.01, "tooltip": "Trust region: KL(base || lora) on the planner's next-token distributions, base = LoRA switched off. Keeps the planner from drifting; 0 = off."}),
+                             "score_first_fraction": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Fraction of planner songs with the transcribed score in front of the music (needs transcribe_scores). The planner always also learns to write the score."}),
+                             "end_token_weight": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 50.0, "step": 1.0, "tooltip": "Up-weights the song-end token; ~20 for instrumental / long-song data that runs to the cap."}),
+                             "max_tokens": ("INT", {"default": 8192, "min": 2048, "max": 16384, "step": 512, "tooltip": "Whole-song planner context. Songs that would not contain an ending are dropped from the planner set."}),
+                             "window_seconds": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 60.0, "step": 5.0, "tooltip": "Decoder training window."}),
+                             "ema_decay": ("FLOAT", {"default": 0.99, "min": 0.0, "max": 0.9999, "step": 0.0001, "tooltip": "EMA of both LoRAs; exported checkpoints are the EMA weights. 0 = off."}),
+                             "eval_every": ("INT", {"default": 50, "min": 25, "max": 1000, "step": 25}), "checkpoint_from": ("INT", {"default": 200, "min": 0, "max": 20000, "step": 50}), "checkpoint_every": ("INT", {"default": 100, "min": 50, "max": 5000, "step": 50}),
                              "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff})},
-                "optional": {"regularizer": ("FS_AUDIO_REGULARIZER",), "strength_clip": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05})},
+                "optional": {"regularizer": ("FS_AUDIO_REGULARIZER",), "strength_model": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}), "strength_clip": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05})},
                 "hidden": {"unique_id": "UNIQUE_ID"}}
     RETURN_TYPES = ("FS_AUDIO_LORAS", "STRING"); RETURN_NAMES = ("loras", "report"); FUNCTION = "train"; CATEGORY = TCAT
-    def train(self, pipe, dataset, lora_name, rank, steps, learning_rate, artist_fraction, batch_songs, score_first_fraction, end_token_weight, max_tokens, eval_every, checkpoint_from, checkpoint_every, seed, regularizer=None, strength_clip=1.0, unique_id=None):
+    def train(self, pipe, dataset, lora_name, steps, decoder_steps, rank_planner, rank_decoder, planner_lr, decoder_lr, io_lr, artist_fraction, batch_songs, kl_weight, score_first_fraction, end_token_weight, max_tokens, window_seconds, ema_decay, eval_every, checkpoint_from, checkpoint_every, seed, regularizer=None, strength_model=1.0, strength_clip=1.0, unique_id=None):
         artist = torch.load(dataset["path"], weights_only=False); reg = load_regularizer(regularizer["path"]) if regularizer else None
         out_dir = folder_paths.get_folder_paths("loras")[0]; status = lambda **k: _msg(unique_id, **k)
-        cfg = {"rank": rank, "steps": steps, "lr": learning_rate, "artist_fraction": artist_fraction, "batch_songs": batch_songs, "score_first_fraction": score_first_fraction, "end_weight": end_token_weight, "max_tokens": max_tokens, "eval_every": eval_every, "ckpt_from": checkpoint_from, "ckpt_every": checkpoint_every, "seed": seed, "out_dir": out_dir, "name": lora_name}
-        # ComfyUI executes nodes under torch.inference_mode(); weights loaded there are inference tensors and cannot enter an autograd graph.
-        # So the trainer loads its own text-encoder copy with inference mode OFF (the pipe's copy is untouched) and trains with grad enabled.
+        cfg = {"name": lora_name, "out_dir": out_dir, "rank_planner": rank_planner, "rank_decoder": rank_decoder, "steps": steps, "decoder_steps": decoder_steps, "lr_planner": planner_lr, "lr_decoder": decoder_lr, "lr_io": io_lr,
+               "artist_fraction": artist_fraction, "batch_songs": batch_songs, "kl_weight": kl_weight, "score_first_fraction": score_first_fraction, "end_weight": end_token_weight, "max_tokens": max_tokens, "window_frames": int(window_seconds * 25),
+               "ema_decay": ema_decay, "eval_every": eval_every, "ckpt_from": checkpoint_from, "ckpt_every": checkpoint_every, "seed": seed}
+        # ComfyUI executes nodes under torch.inference_mode(); weights loaded there are inference tensors and cannot enter an autograd graph, so the
+        # trainer loads its own copy of the checkpoint (planner + decoder) with inference mode OFF. The pipe's copy is untouched.
         import comfy.sd
         with torch.inference_mode(False), torch.enable_grad():
-            status(stage="Loading planner for training", detail=os.path.basename(pipe["ckpt_path"]))
-            _m, clip, _v, _cv = comfy.sd.load_checkpoint_guess_config(pipe["ckpt_path"], output_vae=False, output_clip=True, output_model=False, embedding_directory=folder_paths.get_folder_paths("embeddings"))
-            try: res = fs_trainer.train(clip, artist, reg, cfg, status)
-            finally:
-                del clip; comfy.model_management.soft_empty_cache()
-        final = res["final"] or os.path.join(out_dir, f"{lora_name}_best.safetensors"); status(stage="Done", detail=os.path.basename(final))
-        rep = {"lora": final, "best_artist_loss": round(res["best_artist_loss"], 4), "checkpoints": [os.path.basename(c) for c in res["checkpoints"]], "artist_songs": res["artist_train"], "regularizer_songs": res["regularizer_train"], "score_first": res["score_first"], "batch_songs": batch_songs, "artist_fraction": artist_fraction, "log": res["log"]}
-        return ([{"name": os.path.basename(final), "path": final, "model": 0.0, "clip": strength_clip}], json.dumps(rep, indent=1))
-
-class FSAudioDecoderTrainer:
-    """Trains a decoder (NAR) adapter on the artist's own recordings: rank-r LoRA on the decoder plus the vae2llm/llm2vae layers, flow-matching on
-    the artist's VAE latents conditioned on their tokens. This is the step that makes off-genre / real-production audio render faithfully. Outputs a MODEL-slot loras entry."""
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {"pipe": ("FS_AUDIO_PIPE",), "dataset": ("FS_AUDIO_DATASET",), "adapter_name": ("STRING", {"default": "my_artist_decoder"}),
-                             "rank": ("INT", {"default": 32, "min": 4, "max": 128, "step": 4}), "steps": ("INT", {"default": 3000, "min": 50, "max": 20000, "step": 50}),
-                             "learning_rate": ("FLOAT", {"default": 4e-5, "min": 1e-6, "max": 1e-3, "step": 1e-6}), "io_learning_rate": ("FLOAT", {"default": 2e-5, "min": 1e-6, "max": 1e-3, "step": 1e-6, "tooltip": "For the full vae2llm / llm2vae layers."}),
-                             "window_seconds": ("FLOAT", {"default": 30.0, "min": 10.0, "max": 60.0, "step": 5.0}), "eval_every": ("INT", {"default": 100, "min": 25, "max": 1000, "step": 25}),
-                             "checkpoint_from": ("INT", {"default": 1000, "min": 0, "max": 20000, "step": 50}), "checkpoint_every": ("INT", {"default": 500, "min": 50, "max": 5000, "step": 50}), "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff})},
-                "optional": {"strength_model": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05})}, "hidden": {"unique_id": "UNIQUE_ID"}}
-    RETURN_TYPES = ("FS_AUDIO_LORAS", "STRING"); RETURN_NAMES = ("loras", "report"); FUNCTION = "train"; CATEGORY = TCAT
-    def train(self, pipe, dataset, adapter_name, rank, steps, learning_rate, io_learning_rate, window_seconds, eval_every, checkpoint_from, checkpoint_every, seed, strength_model=1.0, unique_id=None):
-        artist = torch.load(dataset["path"], weights_only=False); out_dir = folder_paths.get_folder_paths("loras")[0]; status = lambda **k: _msg(unique_id, **k)
-        cfg = {"rank": rank, "steps": steps, "lr": learning_rate, "io_lr": io_learning_rate, "window_frames": int(window_seconds * 25), "eval_every": eval_every, "ckpt_from": checkpoint_from, "ckpt_every": checkpoint_every, "seed": seed, "out_dir": out_dir, "name": adapter_name}
-        import comfy.sd
-        with torch.inference_mode(False), torch.enable_grad():
-            status(stage="Loading decoder for training", detail=os.path.basename(pipe["ckpt_path"]))
+            status(stage="Loading YuE2 for training", detail=os.path.basename(pipe["ckpt_path"]))
             model, clip, _v, _cv = comfy.sd.load_checkpoint_guess_config(pipe["ckpt_path"], output_vae=False, output_clip=True, output_model=True, embedding_directory=folder_paths.get_folder_paths("embeddings"))
-            try: res = fs_decoder.train(model, clip, artist, cfg, status)
+            try: res = fs_artist.train(model, clip, artist, reg, cfg, status)
             finally:
                 del model, clip; comfy.model_management.soft_empty_cache()
-        final = res["final"] or os.path.join(out_dir, f"{adapter_name}_best.safetensors"); status(stage="Done", detail=os.path.basename(final))
-        rep = {"adapter": final, "best_artist_flow_loss": round(res["best_artist_loss"], 4), "checkpoints": [os.path.basename(c) for c in res["checkpoints"]], "songs": res["songs"], "log": res["log"]}
-        return ([{"name": os.path.basename(final), "path": final, "model": strength_model, "clip": 0.0}], json.dumps(rep, indent=1))
+        final = res["final"] or os.path.join(out_dir, f"{lora_name}_best.safetensors"); status(stage="Done", detail=os.path.basename(final))
+        rep = {"lora": final, "best_artist_loss": round(res["best_artist_loss"], 4), "checkpoints": [os.path.basename(c) for c in res["checkpoints"]], "artist_songs": res["artist_train"], "regularizer_songs": res["regularizer_train"], "decoder_songs": res["decoder_songs"], "score_first": res["score_first"], "config": cfg, "log": res["log"]}
+        return ([{"name": os.path.basename(final), "path": final, "model": strength_model, "clip": strength_clip}], json.dumps(rep, indent=1))
 
-NODE_CLASS_MAPPINGS = {"FSAudioTrainAssets": FSAudioTrainAssets, "FSAudioDatasetBuilder": FSAudioDatasetBuilder, "FSAudioRegularizer": FSAudioRegularizer, "FSAudioLoraTrainer": FSAudioLoraTrainer, "FSAudioDecoderTrainer": FSAudioDecoderTrainer}
-NODE_DISPLAY_NAME_MAPPINGS = {"FSAudioTrainAssets": "⬇ FS_Audio Training Assets", "FSAudioDatasetBuilder": "📦 FS_Audio Dataset Builder", "FSAudioRegularizer": "🧪 FS_Audio Regularizer", "FSAudioLoraTrainer": "🏋 FS_Audio LoRA Trainer", "FSAudioDecoderTrainer": "🎛 FS_Audio Decoder Adapter Trainer"}
+NODE_CLASS_MAPPINGS = {"FSAudioTrainAssets": FSAudioTrainAssets, "FSAudioDatasetBuilder": FSAudioDatasetBuilder, "FSAudioRegularizer": FSAudioRegularizer, "FSAudioArtistTrainer": FSAudioArtistTrainer}
+NODE_DISPLAY_NAME_MAPPINGS = {"FSAudioTrainAssets": "⬇ FS_Audio Training Assets", "FSAudioDatasetBuilder": "📦 FS_Audio Dataset Builder", "FSAudioRegularizer": "🧪 FS_Audio Regularizer", "FSAudioArtistTrainer": "🏋 FS_Audio Artist Trainer"}

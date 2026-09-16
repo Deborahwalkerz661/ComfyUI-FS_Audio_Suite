@@ -86,7 +86,7 @@ app.registerExtension({
     api.addEventListener("fsaudio.train", ({ detail }) => { const node = app.graph.getNodeById(Number(detail.node)); node?.fsTrain?.(detail); });
   },
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    const FS = new Set(["FSAudioModelLoader", "FSAudioLoraLoader", "FSAudioAdapterLoader", "HumInput", "FSAudioSampler", "FSAudioOutput", "FSAudioAdapterDownloader", "FSAudioTrainAssets", "FSAudioDatasetBuilder", "FSAudioRegularizer", "FSAudioLoraTrainer", "FSAudioDecoderTrainer"]); if (!FS.has(nodeData.name)) return;
+    const FS = new Set(["FSAudioModelLoader", "FSAudioLoraLoader", "FSAudioAdapterLoader", "HumInput", "FSAudioSampler", "FSAudioOutput", "FSAudioAdapterDownloader", "FSAudioTrainAssets", "FSAudioDatasetBuilder", "FSAudioRegularizer", "FSAudioArtistTrainer"]); if (!FS.has(nodeData.name)) return;
     const onCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () { onCreated?.apply(this, arguments); paint(this); try { this.hsSetup?.(); } catch (e) { console.error("[HumSong] UI setup failed for", nodeData.name, e); } };
 
@@ -176,24 +176,24 @@ app.registerExtension({
         this.fsTrain = (d) => { if (d.stage) label.textContent = d.stage; det.textContent = d.detail || ""; if (d.pct != null) { seg.className = "hs-stage on"; seg.style.background = `linear-gradient(90deg, ${MINT} ${d.pct}%, ${LINE} ${d.pct}%)`; seg.style.animation = "none"; } if (d.stage === "Done") { seg.className = "hs-stage done"; seg.style.background = ""; out.textContent = d.detail || ""; } };
       };
     }
-    if (nodeData.name === "FSAudioLoraTrainer" || nodeData.name === "FSAudioDecoderTrainer") {
+    if (nodeData.name === "FSAudioArtistTrainer") {
       nodeType.prototype.hsSetup = function () {
         const wrap = document.createElement("div"); wrap.className = "hs-wrap"; wrap.appendChild(brand());
         const row = document.createElement("div"); const label = document.createElement("span"); label.className = "hs-label"; label.textContent = "Ready"; const det = document.createElement("span"); det.className = "hs-detail"; row.append(label, det);
         const chart = document.createElement("canvas"); chart.className = "hs-wave"; chart.style.height = "110px"; chart.style.cursor = "default";
-        const out = document.createElement("div"); out.className = "hs-meta"; out.innerHTML = "Loss curve appears here. <b>mint</b> = training loss, <b>white</b> = held-out artist, <b>grey</b> = regularizer.";
+        const out = document.createElement("div"); out.className = "hs-meta"; out.innerHTML = "Loss curve appears here. <b>mint</b> = planner training loss, <b>white</b> = held-out artist (planner), <b>grey</b> = regularizer, <b>gold</b> = held-out decoder flow.";
         wrap.append(row, chart, out); addPanel(this, "fs_train_panel", wrap, 250, 500);
         const losses = [], evals = []; let total = 1;
         const draw = () => { const ctx = chart.getContext("2d"), W = chart.width = Math.max(200, chart.clientWidth) * 2, H = chart.height = 220; ctx.fillStyle = INK; ctx.fillRect(0, 0, W, H);
           ctx.fillStyle = "rgba(98,240,218,.12)"; for (let x = 8; x < W; x += 28) for (let y = 8; y < H; y += 28) ctx.fillRect(x, y, 2, 2);
-          const all = losses.map(p => p[1]).concat(evals.flatMap(e => [e.artist, e.regularizer].filter(v => v != null))); if (!all.length) return;
+          const all = losses.map(p => p[1]).concat(evals.flatMap(e => [e.artist, e.regularizer, e.decoder].filter(v => v != null))); if (!all.length) return;
           const lo = Math.min(...all) * 0.97, hi = Math.max(...all) * 1.03; const X = s => 12 + (W - 24) * s / total, Y = v => H - 10 - (H - 20) * (v - lo) / (hi - lo);
           ctx.strokeStyle = MINT; ctx.lineWidth = 2; ctx.beginPath(); losses.forEach(([s, v], i) => i ? ctx.lineTo(X(s), Y(v)) : ctx.moveTo(X(s), Y(v))); ctx.stroke();
           const line = (key, color) => { const pts = evals.filter(e => e[key] != null); if (pts.length < 1) return; ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); pts.forEach((e, i) => i ? ctx.lineTo(X(e.step), Y(e[key])) : ctx.moveTo(X(e.step), Y(e[key]))); ctx.stroke(); pts.forEach(e => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(e.step), Y(e[key]), 4, 0, 7); ctx.fill(); }); };
-          line("artist", "#ffffff"); line("regularizer", "#7b8a96");
+          line("artist", "#ffffff"); line("regularizer", "#7b8a96"); line("decoder", "#e6b450");
           ctx.fillStyle = "#9fb3ae"; ctx.font = "18px ui-monospace, Menlo, monospace"; ctx.fillText(hi.toFixed(2), 14, 26); ctx.fillText(lo.toFixed(2), 14, H - 14); };
-        this.fsTrain = (d) => { if (d.total) total = d.total; if (d.stage) label.textContent = d.stage; if (d.loss != null) { losses.push([d.step, d.loss]); if (losses.length > 2000) losses.shift(); label.textContent = `Step ${d.step} / ${total}`; det.textContent = `loss ${d.loss.toFixed(3)} · seq ${d.seq} · ETA ${Math.round((d.eta || 0) / 60)} min`; }
-          if (d.evals) { evals.push({ step: d.step, ...d.evals }); const e = d.evals; out.innerHTML = `step <b>${d.step}</b>: held-out artist <b>${e.artist?.toFixed(3) ?? "–"}</b>` + (e.regularizer != null ? ` · regularizer <b>${e.regularizer.toFixed(3)}</b>` : ""); }
+        this.fsTrain = (d) => { if (d.total) total = d.total; if (d.stage) label.textContent = d.stage; if (d.loss != null) { losses.push([d.step, d.loss]); if (losses.length > 2000) losses.shift(); label.textContent = `Step ${d.step} / ${total}`; det.textContent = `planner ${d.loss.toFixed(3)}` + (d.kl != null ? ` · KL ${d.kl.toFixed(3)}` : "") + (d.decoder_loss != null ? ` · decoder ${d.decoder_loss.toFixed(3)}` : "") + (d.seq != null ? ` · seq ${d.seq}` : "") + ` · ETA ${Math.round((d.eta || 0) / 60)} min`; }
+          if (d.evals) { evals.push({ step: d.step, ...d.evals }); const e = d.evals; out.innerHTML = `step <b>${d.step}</b>: held-out artist <b>${e.artist?.toFixed(3) ?? "–"}</b>` + (e.regularizer != null ? ` · regularizer <b>${e.regularizer.toFixed(3)}</b>` : "") + (e.decoder != null ? ` · decoder flow <b>${e.decoder.toFixed(3)}</b>` : ""); }
           if (d.detail && !d.loss) det.textContent = d.detail; draw(); };
       };
     }

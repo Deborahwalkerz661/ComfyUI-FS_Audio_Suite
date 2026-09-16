@@ -63,13 +63,16 @@ class DecoderTrainer:
         xt = self.ms.noise_scaling(torch.tensor(sigma, device=self.dev), noise, x1); target = noise - x1
         return F.mse_loss(self.velocity(xt, sigma, prefix, ar_len, grad), target)
     def export(self, path, meta):
+        out = self.state()
+        if all(out[f"diffusion_model.{n}.diff"].abs().max().item() == 0 for n in ("vae2llm", "llm2vae")): logging.warning("FS_Audio Decoder Trainer: vae2llm/llm2vae received no updates; the I/O layers did not train")
+        save_file(out, path, metadata={"format": "pt", "fs_audio": "decoder adapter (NAR LoRA + vae2llm/llm2vae diffs)", "rank": str(self.rank), "scale": "1.0 (no alpha)", **{k: str(v) for k, v in meta.items()}})
+    def state(self):
         out = {}; i = 0
         for l in range(self.L):
             for blk, proj in TARGETS: hk = self.hooks[i]; i += 1; out[f"diffusion_model.model.layers.{l}.{blk}.{proj}.lora_down.weight"] = hk.A.detach().to(torch.bfloat16).cpu().contiguous(); out[f"diffusion_model.model.layers.{l}.{blk}.{proj}.lora_up.weight"] = hk.B.detach().to(torch.bfloat16).cpu().contiguous()
         for n in ("vae2llm", "llm2vae"):
             out[f"diffusion_model.{n}.diff"] = (self.io_w[n].detach().float() - self.io_orig[n]).cpu().contiguous(); out[f"diffusion_model.{n}.diff_b"] = (self.io_b[n].detach().float() - self.io_orig_b[n]).cpu().contiguous()
-        if all(out[f"diffusion_model.{n}.diff"].abs().max().item() == 0 for n in ("vae2llm", "llm2vae")): logging.warning("FS_Audio Decoder Trainer: vae2llm/llm2vae received no updates; the I/O layers did not train")
-        save_file(out, path, metadata={"format": "pt", "fs_audio": "decoder adapter (NAR LoRA + vae2llm/llm2vae diffs)", "rank": str(self.rank), "scale": "1.0 (no alpha)", **{k: str(v) for k, v in meta.items()}})
+        return out
 def train(model, clip, artist, cfg, status=lambda **k: None):
     """cfg: rank steps lr io_lr window_frames eval_every ckpt_from ckpt_every seed out_dir name"""
     torch.backends.cuda.matmul.allow_tf32 = True; random.seed(cfg["seed"]); torch.manual_seed(cfg["seed"]); np.random.seed(cfg["seed"])
