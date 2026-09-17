@@ -8,6 +8,7 @@ import comfy.model_management
 from .trainer import LoRAHook, TARGETS
 from .data import build_sequences, MUSIC_END
 class DecoderTrainer:
+    TARGETS = TARGETS
     def __init__(self, model, clip, rank, dev="cuda"):
         clip.load_model(clip.tokenize("x", lyrics="[instrumental]", cot="off")); comfy.model_management.load_models_gpu([model, clip.patcher], force_full_load=True)   # sets the text encoder's execution_device (YuE2's memory estimate needs real tokens)
         self.dm = model.model.diffusion_model; self.ms = model.model.model_sampling; self.te = clip.cond_stage_model; self.tok = clip.tokenizer; self.dev = dev; self.rank = rank

@@ -118,15 +118,17 @@ class FSAudioArtistTrainer:
                              "ema_decay": ("FLOAT", {"default": 0.99, "min": 0.0, "max": 0.9999, "step": 0.0001, "tooltip": "EMA of both LoRAs; exported checkpoints are the EMA weights. 0 = off."}),
                              "eval_every": ("INT", {"default": 50, "min": 25, "max": 1000, "step": 25}), "checkpoint_from": ("INT", {"default": 200, "min": 0, "max": 20000, "step": 50}), "checkpoint_every": ("INT", {"default": 100, "min": 50, "max": 5000, "step": 50}),
                              "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff})},
-                "optional": {"regularizer": ("FS_AUDIO_REGULARIZER",), "strength_model": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}), "strength_clip": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05})},
+                "optional": {"regularizer": ("FS_AUDIO_REGULARIZER",), "strength_model": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}), "strength_clip": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
+                             "resume_from": (["none"] + folder_paths.get_filename_list("loras"), {"default": "none", "tooltip": "Continue from an earlier Artist Trainer checkpoint (same ranks). Optimizer state starts fresh; the schedule restarts."})},
                 "hidden": {"unique_id": "UNIQUE_ID"}}
     RETURN_TYPES = ("FS_AUDIO_LORAS", "STRING"); RETURN_NAMES = ("loras", "report"); FUNCTION = "train"; CATEGORY = TCAT
-    def train(self, pipe, dataset, lora_name, steps, decoder_steps, rank_planner, rank_decoder, planner_lr, decoder_lr, io_lr, artist_fraction, batch_songs, kl_weight, score_first_fraction, end_token_weight, max_tokens, window_seconds, ema_decay, eval_every, checkpoint_from, checkpoint_every, seed, regularizer=None, strength_model=1.0, strength_clip=1.0, unique_id=None):
+    def train(self, pipe, dataset, lora_name, steps, decoder_steps, rank_planner, rank_decoder, planner_lr, decoder_lr, io_lr, artist_fraction, batch_songs, kl_weight, score_first_fraction, end_token_weight, max_tokens, window_seconds, ema_decay, eval_every, checkpoint_from, checkpoint_every, seed, regularizer=None, strength_model=1.0, strength_clip=1.0, resume_from="none", unique_id=None):
         artist = torch.load(dataset["path"], weights_only=False); reg = load_regularizer(regularizer["path"]) if regularizer else None
         out_dir = folder_paths.get_folder_paths("loras")[0]; status = lambda **k: _msg(unique_id, **k)
         cfg = {"name": lora_name, "out_dir": out_dir, "rank_planner": rank_planner, "rank_decoder": rank_decoder, "steps": steps, "decoder_steps": decoder_steps, "lr_planner": planner_lr, "lr_decoder": decoder_lr, "lr_io": io_lr,
                "artist_fraction": artist_fraction, "batch_songs": batch_songs, "kl_weight": kl_weight, "score_first_fraction": score_first_fraction, "end_weight": end_token_weight, "max_tokens": max_tokens, "window_frames": int(window_seconds * 25),
-               "ema_decay": ema_decay, "eval_every": eval_every, "ckpt_from": checkpoint_from, "ckpt_every": checkpoint_every, "seed": seed}
+               "ema_decay": ema_decay, "eval_every": eval_every, "ckpt_from": checkpoint_from, "ckpt_every": checkpoint_every, "seed": seed,
+               "resume_from": folder_paths.get_full_path_or_raise("loras", resume_from) if resume_from and resume_from != "none" else None}
         # ComfyUI executes nodes under torch.inference_mode(); weights loaded there are inference tensors and cannot enter an autograd graph, so the
         # trainer loads its own copy of the checkpoint (planner + decoder) with inference mode OFF. The pipe's copy is untouched.
         import comfy.sd

@@ -11,6 +11,8 @@ import comfy.model_management
 from .trainer import PlannerTrainer
 from .decoder import DecoderTrainer
 from .data import build_sequences, ABC_START
+from safetensors.torch import load_file
+from .trainer import TARGETS as P_TARGETS
 class EMA:
     def __init__(s, params, decay): s.params = list(params); s.decay = decay; s.shadow = [p.detach().clone() for p in s.params]; s.n = 0
     @torch.no_grad()
@@ -26,6 +28,22 @@ def train(model, clip, artist, regularizer, cfg, status=lambda **k: None):
     torch.backends.cuda.matmul.allow_tf32 = True; random.seed(cfg["seed"]); torch.manual_seed(cfg["seed"]); np.random.seed(cfg["seed"])
     pl = PlannerTrainer(clip, cfg["rank_planner"]); dc = DecoderTrainer(model, clip, cfg["rank_decoder"])
     try:
+        if cfg.get("resume_from"):
+            sd = load_file(cfg["resume_from"]); n_p = n_d = 0
+            with torch.no_grad():
+                i = 0
+                for l in range(len(pl.L2.layers)):
+                    for blk, proj in P_TARGETS:
+                        hk = pl.hooks[i]; i += 1; kd = f"text_encoders.model.layers.{l}.{blk}.{proj}.lora_down.weight"; ku = f"text_encoders.model.layers.{l}.{blk}.{proj}.lora_up.weight"
+                        if kd in sd and sd[kd].shape == hk.A.shape: hk.A.copy_(sd[kd].to(hk.A)); hk.B.copy_(sd[ku].to(hk.B)); n_p += 1
+                i = 0
+                for l in range(dc.L):
+                    for blk, proj in dc.TARGETS if hasattr(dc, "TARGETS") else P_TARGETS:
+                        hk = dc.hooks[i]; i += 1; kd = f"diffusion_model.model.layers.{l}.{blk}.{proj}.lora_down.weight"; ku = f"diffusion_model.model.layers.{l}.{blk}.{proj}.lora_up.weight"
+                        if kd in sd and sd[kd].shape == hk.A.shape: hk.A.copy_(sd[kd].to(hk.A)); hk.B.copy_(sd[ku].to(hk.B)); n_d += 1
+                for n in ("vae2llm", "llm2vae"):
+                    if f"diffusion_model.{n}.diff" in sd: dc.io_w[n].add_(sd[f"diffusion_model.{n}.diff"].to(dc.io_w[n])); dc.io_b[n].add_(sd[f"diffusion_model.{n}.diff_b"].to(dc.io_b[n]))
+            status(stage="Resumed", detail=f"{os.path.basename(cfg['resume_from'])}: {n_p} planner + {n_d} decoder LoRA pairs loaded")
         mt = cfg["max_tokens"]; a_train = [x for x in artist if not x["held"] and pl.fits(x, "off", mt)]; a_val = [x for x in artist if x["held"]] or a_train[:4]
         r_train = [x for x in (regularizer or []) if not x["held"] and pl.fits(x, "off", mt)]; r_val = [x for x in (regularizer or []) if x["held"]][:6]
         d_train = [x for x in artist if not x["held"] and x.get("latents") is not None] or [x for x in artist if x.get("latents") is not None]; d_val = [x for x in artist if x["held"] and x.get("latents") is not None] or d_train[:2]
